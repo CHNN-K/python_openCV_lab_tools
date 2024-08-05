@@ -11,7 +11,8 @@ class ThreadCamera(threading.Thread):
     def __init__(self):
         threading.Thread.__init__(self)
         self._stop_event = threading.Event()
-        
+        self.debug = False
+                
         self.cameraList = []
         self.cameraNumber = 0
         self.width = 2592
@@ -26,12 +27,17 @@ class ThreadCamera(threading.Thread):
         
         self.isGray = False
         self.isBlur = False
+        self.isBlur_gussian = False
         self.isMask_hsv = False
         self.isMask_gray = False
         self.isErosion = False
         self.isDilation = False
         self.isMorphOpen = False
         self.isMorphClose = False
+        self.isMorphGradient = False
+        
+        self.imageProcessingOrder = []
+        self.imageProcessingOrderName = []
         
         self.rotateAngle = 0
         
@@ -43,14 +49,20 @@ class ThreadCamera(threading.Thread):
         self.blur_kernel_x = 1
         self.blur_kernel_y = 1
         
-        self.mask_gray_lower = 0
-        self.mask_gray_upper = 255
+        self.blur_gussian_kernel_x = 1
+        self.blur_gussian_kernel_y = 1
         
-        self.mask_hsv_upper = [0, 0, 255]
         self.mask_hsv_lower = [0, 0, 0]
+        self.mask_hsv_upper = [0, 0, 255]
         
-        self.mask_gray_upper = 255
         self.mask_gray_lower = 0
+        self.mask_gray_upper = 255
+        
+        self.erosion_kernel_x = 1
+        self.erosion_kernel_y = 1
+        
+        self.dilation_kernel_x = 1
+        self.dilation_kernel_y = 1
         
         self.morph_open_kernel_x = 1
         self.morph_open_kernel_y = 1
@@ -58,11 +70,8 @@ class ThreadCamera(threading.Thread):
         self.morph_close_kernel_x = 1
         self.morph_close_kernel_y = 1
         
-        self.erosion_kernel_x = 1
-        self.erosion_kernel_y = 1
-        
-        self.dilation_kernel_x = 1
-        self.dilation_kernel_y = 1
+        self.morph_gradient_kernel_x = 1
+        self.morph_gradient_kernel_y = 1
         
         self.ocrResult = ""
         
@@ -77,52 +86,91 @@ class ThreadCamera(threading.Thread):
                 pass
             
             try:
-                img = ImageProcessing.rotate_image(self.frame, self.rotateAngle)
+                image = ImageProcessing.rotate_image(self.frame, self.rotateAngle)
                 
                 if self.isPerspectiveTransform:
                     if self.isPerspectivePointSet == False:
                         self.savePerspectiveTransformPoint()
+                        # if Cancel will disable persective
                         if (self.isPerspectivePointSet == False):
                             self.isPerspectiveTransform = False
                     else:
-                        img = ImageProcessing.perspectiveTransform(img, self.perspective_transform_pointTL, 
+                        image = ImageProcessing.perspectiveTransform(image, self.perspective_transform_pointTL, 
                                                                     self.perspective_transform_pointBL, 
                                                                     self.perspective_transform_pointBR, 
                                                                     self.perspective_transform_pointBT)
-                        
-                if self.isGray:
-                    img = ImageProcessing.grayscale(img)
-                    
-                if self.isBlur:
-                    try:
-                        img = ImageProcessing.gaussianBlur(img, self.blur_kernel_x, self.blur_kernel_y)
-                    except:
-                        pass
                 
-                if self.isMask_hsv:
-                    img = ImageProcessing.hsvMask(img, self.mask_hsv_lower, self.mask_hsv_upper)
-                
-                if self.isMask_gray:
-                    img = ImageProcessing.rangeMask(img, self.mask_gray_lower, self.mask_gray_upper)
-
-                if self.isErosion:
-                    img = ImageProcessing.erosion(img, self.erosion_kernel_x, self.erosion_kernel_y)
-                    
-                if self.isDilation:
-                    img = ImageProcessing.dilation(img, self.dilation_kernel_x, self.dilation_kernel_y)
-                
-                if self.isMorphOpen:
-                    img = ImageProcessing.morphOpen(img, self.morph_open_kernel_x, self.morph_open_kernel_y)
-                
-                if self.isMorphClose:
-                    img = ImageProcessing.morphClose(img, self.morph_close_kernel_x, self.morph_close_kernel_y)
-                
-                self.showImage = cv2.resize(img,(0,0),fx = 0.4, fy = 0.4)
-                self.image = img
+                image = self.imageProcessing(image)
+            
+                self.showImage = cv2.resize(image,(0,0),fx = 0.4, fy = 0.4)
+                self.image = image
                 
             except Exception as error:
                 pass
         print("Camera thread stop")
+    
+    def imageProcessing(self, image):
+        if len(self.imageProcessingOrder) > 0:
+            for func in self.imageProcessingOrder:
+                image = func(image)
+        return image
+    
+    def add_imageProcessing(self, process):
+        if process in self.imageProcessingOrder:
+            return
+        
+        self.imageProcessingOrder.append(process)
+        self.imageProcessingOrderName.append(process.__name__)
+        
+        print(self.imageProcessingOrderName)
+    
+    def remove_imageProcessing(self, process):
+        if process not in self.imageProcessingOrder:
+            return
+        
+        self.imageProcessingOrder.remove(process)
+        self.imageProcessingOrderName.remove(process.__name__)
+        
+        print(self.imageProcessingOrderName)
+    
+    def imageProcessing_transform_perspective(self, image):
+        if self.isPerspectivePointSet == False:
+            self.savePerspectiveTransformPoint()
+            # if Cancel will disable persective
+            if (self.isPerspectivePointSet == False):
+                self.isPerspectiveTransform = False
+        else:
+            image = ImageProcessing.perspectiveTransform(image, self.perspective_transform_pointTL, 
+                                                        self.perspective_transform_pointBL, 
+                                                        self.perspective_transform_pointBR, 
+                                                        self.perspective_transform_pointBT)
+                        
+    def imageProcessing_grayscale(self, image):
+        return ImageProcessing.grayscale(image)
+    
+    def imageProcessing_blur_gaussian(self, image):
+        return ImageProcessing.gaussianBlur(image, self.blur_gussian_kernel_x, self.blur_gussian_kernel_y)
+    
+    def imageProcessing_mask_hsv(self, image):
+        return ImageProcessing.hsvMask(image, self.mask_hsv_lower, self.mask_hsv_upper)
+    
+    def imageProcessing_mask_gray(self, image):
+        return ImageProcessing.rangeMask(image, self.mask_gray_lower, self.mask_gray_upper)
+    
+    def imageProcessing_erosion(self, image):
+        return ImageProcessing.erosion(image, self.erosion_kernel_x, self.erosion_kernel_y)
+    
+    def imageProcessing_dilation(self, image):
+        return ImageProcessing.dilation(image, self.dilation_kernel_x, self.erosion_kernel_y)
+    
+    def imageProcessing_morph_open(self, image):
+        return ImageProcessing.morphOpen(image, self.morph_open_kernel_x, self.morph_open_kernel_y)
+    
+    def imageProcessing_morph_close(self, image):
+        return ImageProcessing.morphClose(image, self.morph_close_kernel_x, self.morph_close_kernel_y)
+    
+    def imageProcessing_morph_gradient(self, image):
+        return ImageProcessing.morphGradient(image, self.morph_gradient_kernel_x, self.morph_gradient_kernel_y)
     
     def stop(self):
         self._stop_event.set()
@@ -141,13 +189,18 @@ class ThreadCamera(threading.Thread):
             self.videoCapture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
         
     def snapshotImage(self):
+        snapshot = Image.fromarray(np.array(self.frame))
         try:
             snapshot = Image.fromarray(np.array(self.frame))
             now = datetime.now()
             time = now.strftime("%H%M%S")
             date = now.strftime("%d%m%Y")
-            file = f"{date}{time}"
+            file = f"Snapshot_{date}_{time}"
             imageType = ".bmp"
+            
+            if not os.path.isdir("Snapshot"):
+                os.mkdir("Snapshot")
+                
             snapshot.save(f"Snapshot/{file}{imageType}")
             
             print(f"Snapshot : {file}{imageType}")
@@ -160,8 +213,12 @@ class ThreadCamera(threading.Thread):
             now = datetime.now()
             time = now.strftime("%H%M%S")
             date = now.strftime("%d%m%Y")
-            file = f"{date}{time}"
+            file = f"PostProcess_Snapshot_{date}_{time}"
             imageType = ".bmp"
+            
+            if not os.path.isdir("Snapshot"):
+                os.mkdir("Snapshot")
+            
             snapshot.save(f"Snapshot/{file}{imageType}")
             
             print(f"Snapshot : {file}{imageType}")
@@ -226,27 +283,24 @@ class ThreadCamera(threading.Thread):
                     selectionPoint.append((mousePos))
                     pointTL = True
                     pointState = "Point_BottomLeft"
-                    print(f"Top left : {self.perspective_transform_pointTL}")
                     
                 elif pointBL == False:
                     self.perspective_transform_pointBL = [x,y]
-                    cv2.putText(image, pointState, (mousePos[0], mousePos[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+                    cv2.putText(image, pointState, (mousePos[0], mousePos[1] + 30), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
                     cv2.circle(image, mousePos, circleRadian, color, -1)
                     cv2.line(image, selectionPoint[0], mousePos, color, 2)
                     selectionPoint.append((mousePos))
                     pointBL = True
                     pointState = "Point_BottomRight"
-                    print(f"Bottom left : {self.perspective_transform_pointBL}")
                     
                 elif pointBR == False:
                     self.perspective_transform_pointBR = [x,y]
                     pointBR = True
-                    cv2.putText(image, pointState, (mousePos[0], mousePos[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+                    cv2.putText(image, pointState, (mousePos[0], mousePos[1] + 30), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
                     cv2.circle(image, mousePos, circleRadian, color, -1)
                     cv2.line(image, selectionPoint[1], mousePos, color, 2)
                     selectionPoint.append((mousePos))
                     pointState = "Point_TopRight"
-                    print(f"Bottom right : {self.perspective_transform_pointBR}")
                         
                 elif pointBT == False:
                     self.perspective_transform_pointBT = [x,y]
@@ -256,7 +310,6 @@ class ThreadCamera(threading.Thread):
                     cv2.line(image, selectionPoint[2], mousePos, color, 2)
                     selectionPoint.append((mousePos))
                     pointState = ""
-                    print(f"Top right : {self.perspective_transform_pointBT}")
                 
             if pointTL and pointBL and pointBR and pointBT:
                 print("Collect Point complete")
@@ -326,6 +379,12 @@ class ThreadCamera(threading.Thread):
                 isSelected = True
                 cv2.destroyWindow('OCR_Inspection')
                 
+                if self.debug:
+                    img = self.image[ocr_point_tl[1]:ocr_point_br[1], ocr_point_tl[0]:ocr_point_br[0]]
+                    cv2.imshow("1", img)
+                    cv2.waitKey()
+                    cv2.destroyWindow("1")
+                
                 self.ocrResult = ImageProcessing.OCRInspection(self.image, ocr_point_tl, ocr_point_br)
                 return
             
@@ -386,6 +445,10 @@ class ImageProcessing:
     def morphClose(image, kernelx, kernely):
         morphCloseKernel = np.ones((kernelx, kernely), np.uint8)
         return cv2.morphologyEx(image, cv2.MORPH_CLOSE, morphCloseKernel)
+    
+    def morphGradient(image, kernelx, kernely):
+        morphGradientKernel = np.ones((kernelx, kernely), np.uint8)
+        return cv2.morphologyEx(image, cv2.MORPH_GRADIENT, morphGradientKernel)
     
     def perspectiveTransform(image, pt_TL, pt_BL, pt_BR, pt_TR):
         width_AD = np.sqrt(((pt_TL[0] - pt_TR[0]) ** 2) + ((pt_TL[1] - pt_TR[1]) ** 2))
@@ -479,7 +542,7 @@ class MainApp(CTk):
         self.frame_camera.grid(row = 0, column = 0)
         
         self.frame_camera_selection = CTkFrame(self.frame_camera, fg_color = Color().transparent)
-        self.frame_camera_selection.pack()
+        # self.frame_camera_selection.pack()
         
         self.label_camera_number_title = CTkLabel(self.frame_camera_selection, text = "Camera Number : ")
         self.label_camera_number_title.grid(row = 0, column = 0)
@@ -513,6 +576,7 @@ class MainApp(CTk):
                                     number_of_steps = 720,
                                     command = self.slider_rotate_callback)
         self.slider_rotate.pack()
+        self.slider_rotate.bind("<Double-Button-1>", self.slider_rotate_doubleClick_callback)
         
         self.label_rotate = CTkLabel(self.frame_camera, text = "0°")
         self.label_rotate.pack()
@@ -546,71 +610,18 @@ class MainApp(CTk):
         self.btn_savePerspectiveTransform = CTkButton(self.mainframe, text = "Reset Perspective Transform", command = self.btn_resetPerspectiveTransform_callback)
         self.btn_savePerspectiveTransform.pack()
         
-        self.checkbox_isGray = CTkCheckBox(self.mainframe, text = "Gray", command = self.checkbox_gray_callback)
+        self.checkbox_isGray = CTkCheckBox(self.mainframe, text = "Grayscale", command = self.checkbox_gray_callback)
         self.checkbox_isGray.pack()
         
-        self.checkbox_isBlur = CTkCheckBox(self.mainframe, text = "Blur", command = self.checkbox_blur_callback)
-        self.checkbox_isBlur.pack()
-        self.comboBox_blur = CTkComboBox(self.mainframe, values = self.comboBox_var_blur, width = 200)
-        self.comboBox_blur.pack()
-        
-        self.frame_blur_kernel = CTkFrame(self.mainframe, fg_color = Color().transparent)
-        self.frame_blur_kernel.pack()
-        self.frame_blur_kernel.grid_rowconfigure((0,2), weight = 0)
-        self.frame_blur_kernel.grid_rowconfigure((1), weight = 0, minsize = 5)
-        self.frame_blur_kernel.grid_columnconfigure((0,1,2), weight = 0)
-        
-        self.label_blur_kernelx = CTkLabel(self.frame_blur_kernel, text = "X",
-                                           height = 15)
-        self.label_blur_kernelx.grid(row = 0, column = 0, padx = (0,5))
-        
-        self.slider_blur_kernelx = CTkSlider(self.frame_blur_kernel,
-                                            height = 15,
-                                            progress_color = Color().blue,
-                                            fg_color = Color().blue,
-                                            button_color = Color().white,
-                                            button_hover_color = Color().white,
-                                            from_ = 1, to = 255,
-                                            number_of_steps = 127,
-                                            corner_radius = 0,
-                                            button_length = 1,
-                                            button_corner_radius = 3,
-                                            command = self.slider_blur_kernelx_callback)
-        self.slider_blur_kernelx.set(1)
-        self.slider_blur_kernelx.grid(row = 0, column = 1)
-        
-        self.label_blur_kernelx_value = CTkLabel(self.frame_blur_kernel, text = "1",
-                                           height = 15)
-        self.label_blur_kernelx_value.grid(row = 0, column = 2)
-        
-        self.label_blur_kernely = CTkLabel(self.frame_blur_kernel, text = "Y",
-                                           height = 15)
-        self.label_blur_kernely.grid(row = 1, column = 0, padx = (0,5))
-        
-        self.slider_blur_kernely = CTkSlider(self.frame_blur_kernel,
-                                            height = 15,
-                                            progress_color = Color().blue,
-                                            fg_color = Color().blue,
-                                            button_color = Color().white,
-                                            button_hover_color = Color().white,
-                                            from_ = 1, to = 255,
-                                            number_of_steps = 127,
-                                            corner_radius = 0,
-                                            button_length = 1,
-                                            button_corner_radius = 3,
-                                            command = self.slider_blur_kernely_callback)
-        self.slider_blur_kernely.set(1)
-        self.slider_blur_kernely.grid(row = 1, column = 1)
-        
-        self.label_blur_kernely_value = CTkLabel(self.frame_blur_kernel, text = "1",
-                                           height = 15)
-        self.label_blur_kernely_value.grid(row = 1, column = 2)
-        
         self.checkbox_isMask_hsv = CTkCheckBox(self.mainframe, text = "HSV Mask", command = self.checkbox_mask_hsv_callback)
-        self.checkbox_isMask_hsv.pack()
+        # self.checkbox_isMask_hsv.pack()
         
         self.slider_mask_hsv = Slider_MaskHSV(self.mainframe, self)
-        self.slider_mask_hsv.pack()
+        # self.slider_mask_hsv.pack()
+        
+        self.module_blur_gussian = Module_Blur_Gaussian(self.mainframe, self)
+        self.module_blur_gussian.set_callback(self.module_blur_gussian_callback)
+        self.module_blur_gussian.pack()
         
         self.module_mask_gray = Module_Mask_Gray(self.mainframe, self)
         self.module_mask_gray.set_callback(self.module_mask_gray_callback)
@@ -632,8 +643,9 @@ class MainApp(CTk):
         self.module_morph_close.set_callback(self.module_morph_close_callback)
         self.module_morph_close.pack()
         
-        self.checkbox_isMorphGradient = CTkCheckBox(self.mainframe, text = "Morph Gradient")
-        self.checkbox_isMorphGradient.pack()
+        self.module_morph_gradient = Module_MorphGradient(self.mainframe, self)
+        self.module_morph_gradient.set_callback(self.module_morph_gradient_callback)
+        self.module_morph_gradient.pack()
         
         self.btn_OCRInspection = CTkButton(self.mainframe, text = "OCR Inspection", command = self.btn_OCRInspection_callback)
         self.btn_OCRInspection.pack()
@@ -647,27 +659,20 @@ class MainApp(CTk):
 
     def slider_rotate_callback(self, value):
         self.camera.rotateAngle = value
-        self.label_rotate.configure(text = f"{value}°")
+        self.label_rotate.configure(text = f"{self.camera.rotateAngle}°")
+        
+    def slider_rotate_doubleClick_callback(self, event):
+        self.slider_rotate.set(0)
+        self.camera.rotateAngle = 0
+        self.label_rotate.configure(text = f"{self.camera.rotateAngle}")
     
     def checkbox_gray_callback(self):
         if self.checkbox_isGray.get():
             self.camera.isGray = True
+            self.camera.add_imageProcessing(self.camera.imageProcessing_grayscale)
         else:
             self.camera.isGray = False
-    
-    def checkbox_blur_callback(self):
-        if self.checkbox_isBlur.get():
-            self.camera.isBlur = True
-        else:
-            self.camera.isBlur = False
-    
-    def slider_blur_kernelx_callback(self, value):
-        self.camera.blur_kernel_x = int(value)
-        self.label_blur_kernelx_value.configure(text = str(int(value)))
-        
-    def slider_blur_kernely_callback(self, value):
-        self.camera.blur_kernel_y = int(value)
-        self.label_blur_kernely_value.configure(text = str(int(value)))
+            self.camera.remove_imageProcessing(self.camera.imageProcessing_grayscale)
     
     def checkbox_mask_hsv_callback(self):
         if self.checkbox_isMask_hsv.get():
@@ -679,30 +684,76 @@ class MainApp(CTk):
         self.camera.mask_hsv_upper = self.slider_mask_hsv.upper_range
         self.camera.mask_hsv_lower = self.slider_mask_hsv.lower_range
     
+    def module_blur_gussian_callback(self):
+        self.camera.isBlur_gussian = self.module_blur_gussian.isActive
+        self.camera.blur_gussian_kernel_x = self.module_blur_gussian.kernelx
+        self.camera.blur_gussian_kernel_y = self.module_blur_gussian.kernely
+        
+        if self.module_blur_gussian.isActive:
+            self.camera.add_imageProcessing(self.camera.imageProcessing_blur_gaussian)
+        else:
+            self.camera.remove_imageProcessing(self.camera.imageProcessing_blur_gaussian)
+    
     def module_mask_gray_callback(self):
         self.camera.isMask_gray = self.module_mask_gray.isActive
         self.camera.mask_gray_lower = self.module_mask_gray.mask_lower
         self.camera.mask_gray_upper = self.module_mask_gray.mask_upper
+        
+        if self.module_mask_gray.isActive:
+            self.camera.add_imageProcessing(self.camera.imageProcessing_mask_gray)
+        else:
+            self.camera.remove_imageProcessing(self.camera.imageProcessing_mask_gray)
 
     def module_erosion_callback(self):
         self.camera.isErosion = self.module_erosion.isActive
         self.camera.erosion_kernel_x = self.module_erosion.kernelx
         self.camera.erosion_kernel_y = self.module_erosion.kernely
+        
+        if self.module_erosion.isActive:
+            self.camera.add_imageProcessing(self.camera.imageProcessing_erosion)
+        else:
+            self.camera.remove_imageProcessing(self.camera.imageProcessing_erosion)
     
     def module_dilation_callback(self):
         self.camera.isDilation = self.module_dilation.isActive
         self.camera.dilation_kernel_x = self.module_dilation.kernelx
         self.camera.dilation_kernel_y = self.module_dilation.kernely
         
+        if self.module_dilation.isActive:
+            self.camera.add_imageProcessing(self.camera.imageProcessing_dilation)
+        else:
+            self.camera.remove_imageProcessing(self.camera.imageProcessing_dilation)
+        
     def module_morph_open_callback(self):
         self.camera.isMorphOpen = self.module_morph_open.isActive
         self.camera.morph_open_kernel_x = self.module_morph_open.kernelx
         self.camera.morph_open_kernel_y = self.module_morph_open.kernely
         
+        if self.module_morph_open.isActive:
+            self.camera.add_imageProcessing(self.camera.imageProcessing_morph_open)
+        else:
+            self.camera.remove_imageProcessing(self.camera.imageProcessing_morph_open)
+        
     def module_morph_close_callback(self):
         self.camera.isMorphClose = self.module_morph_close.isActive
         self.camera.morph_close_kernel_x = self.module_morph_close.kernelx
         self.camera.morph_close_kernel_y = self.module_morph_close.kernely
+    
+        if self.module_morph_close.isActive:
+            self.camera.add_imageProcessing(self.camera.imageProcessing_morph_close)
+        else:
+            self.camera.remove_imageProcessing(self.camera.imageProcessing_morph_close)
+    
+    def module_morph_gradient_callback(self):
+        self.camera.isMorphGradient = self.module_morph_gradient.isActive
+        self.camera.morph_gradient_kernel_x = self.module_morph_gradient.kernelx
+        self.camera.morph_gradient_kernel_y = self.module_morph_gradient.kernely
+    
+        if self.module_morph_gradient.isActive:
+            self.camera.add_imageProcessing(self.camera.imageProcessing_morph_gradient)
+        else:
+            self.camera.remove_imageProcessing(self.camera.imageProcessing_morph_gradient)
+        return
     
     def cameraUpdate(self):
         try:
@@ -769,6 +820,73 @@ class Slider_MaskHSV(CTkFrame):
         self.lower_range = list(self.slider_mask_hsv_lower.rgb)
         
         self.mainApp.slider_mask_hsv_callback()
+
+class Module_Blur_Gaussian(CTkFrame):
+    def __init__(self, master, mainApp, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
+        
+        self.mainApp = mainApp
+        self.isActive = False
+        self.kernelx = 1
+        self.kernely = 1
+        self.callback = None
+        
+        self.configure(fg_color = Color().transparent)
+        
+        self.build_ui()
+    
+    def build_ui(self):
+        self.grid_rowconfigure(0, weight = 1)
+        self.grid_columnconfigure(0, weight = 1)
+        
+        self.frame_border = CTkFrame(self, fg_color = Color().transparent,
+                                      corner_radius = 0, 
+                                      border_width = 1, 
+                                      border_color = Color().white)
+        self.frame_border.grid(row = 0, column = 0, ipadx = 10, ipady = 10, sticky = NSEW)
+        self.frame_border.grid_rowconfigure((0,2), weight = 0)
+        self.frame_border.grid_rowconfigure((1), weight = 0, minsize = 10)
+        self.frame_border.grid_columnconfigure(0, weight = 1)
+        
+        self.frame_active = CTkFrame(self.frame_border, fg_color = Color().transparent)
+        self.frame_active.grid(row = 0, column = 0, padx = (10,0), pady = (10,0), sticky = W)
+        self.frame_active.grid_columnconfigure((0,2), weight = 0)
+        self.frame_active.grid_columnconfigure((1), weight = 0, minsize = 5)
+        self.frame_active.grid_rowconfigure(0, weight = 1)
+        
+        self.checkbox_active = CTkCheckBox(self.frame_active, text = "",
+                                           width = 15, height = 15,
+                                           command = self.checkbox_active_callback)
+        self.checkbox_active.grid(row = 0, column = 0)
+        
+        self.label_active_title = CTkLabel(self.frame_active, text = "Gussian Blur",
+                                      height = 15)
+        self.label_active_title.grid(row = 0, column = 2)
+        
+        self.slider_kernel = Slider_Kernel_xy(self.frame_border)
+        self.slider_kernel.set_callback(self.updateValue)
+        self.slider_kernel.slider_kernelx.configure(from_ = 1, to = 255, number_of_steps = 127)
+        self.slider_kernel.slider_kernely.configure(from_ = 1, to = 255, number_of_steps = 127)
+        self.slider_kernel.grid(row = 2, column = 0)
+    
+    def checkbox_active_callback(self):
+        if self.checkbox_active.get():
+            self.isActive = True
+        else:
+            self.isActive = False
+        
+        if self.callback:
+            self.callback()
+    
+    def set_callback(self, callback):
+        self.callback = callback
+    
+    def updateValue(self):
+        self.kernelx = self.slider_kernel.kernelx
+        self.kernely = self.slider_kernel.kernely
+        
+        if self.callback:
+            self.callback()
 
 class Module_Mask_Gray(CTkFrame):
     def __init__(self, master, mainApp, *args, **kwargs):
@@ -1088,6 +1206,73 @@ class Module_MorphClose(CTkFrame):
         self.slider_kernel.set_callback(self.updateValue)
         self.slider_kernel.slider_kernelx.configure(from_ = 1, to = 10, number_of_steps = 10)
         self.slider_kernel.slider_kernely.configure(from_ = 1, to = 10, number_of_steps = 10)
+        self.slider_kernel.grid(row = 2, column = 0)
+    
+    def checkbox_active_callback(self):
+        if self.checkbox_active.get():
+            self.isActive = True
+        else:
+            self.isActive = False
+        
+        if self.callback:
+            self.callback()
+    
+    def set_callback(self, callback):
+        self.callback = callback
+    
+    def updateValue(self):
+        self.kernelx = self.slider_kernel.kernelx
+        self.kernely = self.slider_kernel.kernely
+        
+        if self.callback:
+            self.callback()
+
+class Module_MorphGradient(CTkFrame):
+    def __init__(self, master, mainApp, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
+        
+        self.mainApp = mainApp
+        self.isActive = False
+        self.kernelx = 1
+        self.kernely = 1
+        self.callback = None
+        
+        self.configure(fg_color = Color().transparent)
+        
+        self.build_ui()
+    
+    def build_ui(self):
+        self.grid_rowconfigure(0, weight = 1)
+        self.grid_columnconfigure(0, weight = 1)
+        
+        self.frame_border = CTkFrame(self, fg_color = Color().transparent,
+                                      corner_radius = 0, 
+                                      border_width = 1, 
+                                      border_color = Color().white)
+        self.frame_border.grid(row = 0, column = 0, ipadx = 10, ipady = 10, sticky = NSEW)
+        self.frame_border.grid_rowconfigure((0,2), weight = 0)
+        self.frame_border.grid_rowconfigure((1), weight = 0, minsize = 10)
+        self.frame_border.grid_columnconfigure(0, weight = 1)
+        
+        self.frame_active = CTkFrame(self.frame_border, fg_color = Color().transparent)
+        self.frame_active.grid(row = 0, column = 0, padx = (10,0), pady = (10,0), sticky = W)
+        self.frame_active.grid_columnconfigure((0,2), weight = 0)
+        self.frame_active.grid_columnconfigure((1), weight = 0, minsize = 5)
+        self.frame_active.grid_rowconfigure(0, weight = 1)
+        
+        self.checkbox_active = CTkCheckBox(self.frame_active, text = "",
+                                           width = 15, height = 15,
+                                           command = self.checkbox_active_callback)
+        self.checkbox_active.grid(row = 0, column = 0)
+        
+        self.label_active_title = CTkLabel(self.frame_active, text = "Morph Gradient",
+                                      height = 15)
+        self.label_active_title.grid(row = 0, column = 2)
+        
+        self.slider_kernel = Slider_Kernel_xy(self.frame_border)
+        self.slider_kernel.set_callback(self.updateValue)
+        self.slider_kernel.slider_kernelx.configure(from_ = 1, to = 20, number_of_steps = 20)
+        self.slider_kernel.slider_kernely.configure(from_ = 1, to = 20, number_of_steps = 20)
         self.slider_kernel.grid(row = 2, column = 0)
     
     def checkbox_active_callback(self):
