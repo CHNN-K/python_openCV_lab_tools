@@ -46,6 +46,10 @@ class ThreadCamera(threading.Thread):
         self.perspective_transform_pointBR = [0,0]
         self.perspective_transform_pointBT = [0,0]
         
+        self.mask_red = False
+        self.mask_green = False
+        self.mask_blue = False
+        
         self.blur_kernel_x = 1
         self.blur_kernel_y = 1
         
@@ -106,6 +110,10 @@ class ThreadCamera(threading.Thread):
                 self.image = image
                 
             except Exception as error:
+                image = self.showErrorImage()
+                
+                self.showImage = cv2.resize(image,(0,0),fx = 0.4, fy = 0.4)
+                self.image = image
                 pass
         print("Camera thread stop")
     
@@ -131,6 +139,7 @@ class ThreadCamera(threading.Thread):
         self.imageProcessingOrder.remove(process)
         self.imageProcessingOrderName.remove(process.__name__)
         
+        # Print Order Function List
         print(self.imageProcessingOrderName)
     
     def imageProcessing_transform_perspective(self, image):
@@ -144,7 +153,16 @@ class ThreadCamera(threading.Thread):
                                                         self.perspective_transform_pointBL, 
                                                         self.perspective_transform_pointBR, 
                                                         self.perspective_transform_pointBT)
-                        
+    
+    def imageProcessing_mask_red(self, image):
+        return ImageProcessing.removeRed_channel(image)
+    
+    def imageProcessing_mask_green(self, image):
+        return ImageProcessing.removeGreen_channel(image)
+    
+    def imageProcessing_mask_blue(self, image):
+        return ImageProcessing.removeBlue_channel(image)
+    
     def imageProcessing_grayscale(self, image):
         return ImageProcessing.grayscale(image)
     
@@ -187,6 +205,18 @@ class ThreadCamera(threading.Thread):
             self.videoCapture = cv2.VideoCapture(self.cameraNumber)
             self.videoCapture.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
             self.videoCapture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+       
+    def showErrorImage(self):
+        image = np.zeros((self.height, self.width, 3), dtype = np.uint8)
+        text = "IMAGE ERROR"
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 2
+        font_thickness = 3
+        (text_width, text_height), _ = cv2.getTextSize(text, font, font_scale, font_thickness)
+        text_x = (image.shape[1] - text_width) // 2
+        text_y = (image.shape[0] + text_height) // 2
+        cv2.putText(image, text, (text_x, text_y), font, font_scale, (255,255,255), font_thickness)
+        return image
         
     def snapshotImage(self):
         snapshot = Image.fromarray(np.array(self.frame))
@@ -374,6 +404,8 @@ class ThreadCamera(threading.Thread):
                 
                 processImage = cv2.rectangle(image.copy(), mousePosClick, mousePos, color, 2)
                 cv2.putText(processImage, "OCR", (mousePosClick[0], mousePosClick[1] - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, color, 2)
+                cv2.rectangle(processImage, (mousePosClick[0], mousePos[1]), (mousePosClick[0] + 350, mousePos[1] + 50), color, -1)
+                cv2.putText(processImage, "R-Click : Start OCR", (mousePosClick[0] + 10, mousePos[1] + 35), cv2.FONT_HERSHEY_SIMPLEX, 1, (255,255,255), 2)
                 
             if event == cv2.EVENT_RBUTTONDOWN:
                 isSelected = True
@@ -412,6 +444,18 @@ class ImageProcessing:
     def grayscale(image):
         img = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
         return img
+    
+    def removeRed_channel(image):
+        image[:,:,0] = np.zeros([image.shape[0], image.shape[1]])
+        return image
+    
+    def removeGreen_channel(image):
+        image[:,:,1] = np.zeros([image.shape[0], image.shape[1]])
+        return image
+    
+    def removeBlue_channel(image):
+        image[:,:,2] = np.zeros([image.shape[0], image.shape[1]])
+        return image
     
     def gaussianBlur(image, kernelx, kernely):
         kernelx = round(kernelx)
@@ -498,7 +542,9 @@ class Color:
 class Font:
     def __init__(self):
         self.font = "Kanit light"
-        self.font_bold = "Kanit" 
+        self.font_bold = "Kanit"
+        
+        self.module_label = (self.font_bold, 14)
 
 class MainApp(CTk):
     def __init__(self):
@@ -576,7 +622,7 @@ class MainApp(CTk):
                                     number_of_steps = 720,
                                     command = self.slider_rotate_callback)
         self.slider_rotate.pack()
-        self.slider_rotate.bind("<Double-Button-1>", self.slider_rotate_doubleClick_callback)
+        self.slider_rotate.bind("<Double-Button-1>", lambda event : self.slider_rotate_doubleClick_callback())
         
         self.label_rotate = CTkLabel(self.frame_camera, text = "0°")
         self.label_rotate.pack()
@@ -604,51 +650,58 @@ class MainApp(CTk):
         """ Right """
         self.mainframe = CTkFrame(self, fg_color = Color().transparent)
         self.mainframe.grid(row = 0, column = 2)
+        self.mainframe.grid_columnconfigure((0,2), weight = 0)
+        self.mainframe.grid_columnconfigure((1), weight = 0, minsize = 5)
         
-        self.checkbox_isPerspectiveTransform = CTkCheckBox(self.mainframe, text = "Perspective Transform", command = self.checkbox_perspectiveTransform_callback)
-        self.checkbox_isPerspectiveTransform.pack()
-        self.btn_savePerspectiveTransform = CTkButton(self.mainframe, text = "Reset Perspective Transform", command = self.btn_resetPerspectiveTransform_callback)
-        self.btn_savePerspectiveTransform.pack()
+        self.checkbox_isPerspectiveTransform = CTkCheckBox(self, text = "Perspective Transform", command = self.checkbox_perspectiveTransform_callback)
+        self.checkbox_isPerspectiveTransform.place(relx = 0.85, rely = 0.1, anchor = CENTER)
+        self.btn_savePerspectiveTransform = CTkButton(self, text = "Reset Perspective Transform", command = self.btn_resetPerspectiveTransform_callback)
+        self.btn_savePerspectiveTransform.place(relx = 0.85, rely = 0.13, anchor = CENTER)
         
-        self.checkbox_isGray = CTkCheckBox(self.mainframe, text = "Grayscale", command = self.checkbox_gray_callback)
-        self.checkbox_isGray.pack()
+        self.module_grayscale = Module_Grayscale(self.mainframe, self)
+        self.module_grayscale.set_callback(self.module_grayscale_callback)
+        self.module_grayscale.grid(row = 0, column = 0)
+        
+        self.module_mask_rgb = Module_Mask_RGB(self.mainframe, self)
+        self.module_mask_rgb.set_callback(self.module_mask_rgb_callback)
+        self.module_mask_rgb.grid(row = 1, column = 0)
+        
+        self.module_blur_gussian = Module_Blur_Gaussian(self.mainframe, self)
+        self.module_blur_gussian.set_callback(self.module_blur_gussian_callback)
+        self.module_blur_gussian.grid(row = 2, column = 0)
+        
+        self.module_mask_gray = Module_Mask_Gray(self.mainframe, self)
+        self.module_mask_gray.set_callback(self.module_mask_gray_callback)
+        self.module_mask_gray.grid(row = 3, column = 0)
+        
+        self.module_erosion = Module_Erosion(self.mainframe, self)
+        self.module_erosion.set_callback(self.module_erosion_callback)
+        self.module_erosion.grid(row = 4, column = 0)
+        
+        self.module_dilation = Module_Dilation(self.mainframe, self)
+        self.module_dilation.set_callback(self.module_dilation_callback)
+        self.module_dilation.grid(row = 0, column = 2)
+        
+        self.module_morph_open = Module_MorphOpen(self.mainframe, self)
+        self.module_morph_open.set_callback(self.module_morph_open_callback)
+        self.module_morph_open.grid(row = 1, column = 2)
+        
+        self.module_morph_close = Module_MorphClose(self.mainframe, self)
+        self.module_morph_close.set_callback(self.module_morph_close_callback)
+        self.module_morph_close.grid(row = 2, column = 2)
+        
+        self.module_morph_gradient = Module_MorphGradient(self.mainframe, self)
+        self.module_morph_gradient.set_callback(self.module_morph_gradient_callback)
+        self.module_morph_gradient.grid(row = 3, column = 2)
+        
+        self.btn_OCRInspection = CTkButton(self.mainframe, text = "OCR Inspection", command = self.btn_OCRInspection_callback)
+        self.btn_OCRInspection.grid(row = 4, column = 2)
         
         self.checkbox_isMask_hsv = CTkCheckBox(self.mainframe, text = "HSV Mask", command = self.checkbox_mask_hsv_callback)
         # self.checkbox_isMask_hsv.pack()
         
         self.slider_mask_hsv = Slider_MaskHSV(self.mainframe, self)
         # self.slider_mask_hsv.pack()
-        
-        self.module_blur_gussian = Module_Blur_Gaussian(self.mainframe, self)
-        self.module_blur_gussian.set_callback(self.module_blur_gussian_callback)
-        self.module_blur_gussian.pack()
-        
-        self.module_mask_gray = Module_Mask_Gray(self.mainframe, self)
-        self.module_mask_gray.set_callback(self.module_mask_gray_callback)
-        self.module_mask_gray.pack()
-        
-        self.module_erosion = Module_Erosion(self.mainframe, self)
-        self.module_erosion.set_callback(self.module_erosion_callback)
-        self.module_erosion.pack()
-        
-        self.module_dilation = Module_Dilation(self.mainframe, self)
-        self.module_dilation.set_callback(self.module_dilation_callback)
-        self.module_dilation.pack()
-        
-        self.module_morph_open = Module_MorphOpen(self.mainframe, self)
-        self.module_morph_open.set_callback(self.module_morph_open_callback)
-        self.module_morph_open.pack()
-        
-        self.module_morph_close = Module_MorphClose(self.mainframe, self)
-        self.module_morph_close.set_callback(self.module_morph_close_callback)
-        self.module_morph_close.pack()
-        
-        self.module_morph_gradient = Module_MorphGradient(self.mainframe, self)
-        self.module_morph_gradient.set_callback(self.module_morph_gradient_callback)
-        self.module_morph_gradient.pack()
-        
-        self.btn_OCRInspection = CTkButton(self.mainframe, text = "OCR Inspection", command = self.btn_OCRInspection_callback)
-        self.btn_OCRInspection.pack()
 
     def FixedUpdate(self):
         self.cameraUpdate()
@@ -661,18 +714,10 @@ class MainApp(CTk):
         self.camera.rotateAngle = value
         self.label_rotate.configure(text = f"{self.camera.rotateAngle}°")
         
-    def slider_rotate_doubleClick_callback(self, event):
+    def slider_rotate_doubleClick_callback(self):
         self.slider_rotate.set(0)
         self.camera.rotateAngle = 0
         self.label_rotate.configure(text = f"{self.camera.rotateAngle}")
-    
-    def checkbox_gray_callback(self):
-        if self.checkbox_isGray.get():
-            self.camera.isGray = True
-            self.camera.add_imageProcessing(self.camera.imageProcessing_grayscale)
-        else:
-            self.camera.isGray = False
-            self.camera.remove_imageProcessing(self.camera.imageProcessing_grayscale)
     
     def checkbox_mask_hsv_callback(self):
         if self.checkbox_isMask_hsv.get():
@@ -683,6 +728,35 @@ class MainApp(CTk):
     def slider_mask_hsv_callback(self):
         self.camera.mask_hsv_upper = self.slider_mask_hsv.upper_range
         self.camera.mask_hsv_lower = self.slider_mask_hsv.lower_range
+    
+    def module_grayscale_callback(self):
+        self.camera.isGray = self.module_grayscale.isActive
+        
+        if self.camera.isGray:
+            self.camera.add_imageProcessing(self.camera.imageProcessing_grayscale)
+        else:
+            self.camera.remove_imageProcessing(self.camera.imageProcessing_grayscale)
+    
+    def module_mask_rgb_callback(self):
+        self.camera.mask_red = self.module_mask_rgb.mask_red
+        self.camera.mask_green = self.module_mask_rgb.mask_green
+        self.camera.mask_blue = self.module_mask_rgb.mask_blue
+        
+        if self.camera.mask_red:
+            self.camera.add_imageProcessing(self.camera.imageProcessing_mask_red)
+        elif not self.camera.mask_red:
+            self.camera.remove_imageProcessing(self.camera.imageProcessing_mask_red)
+        
+        if self.camera.mask_green:
+            self.camera.add_imageProcessing(self.camera.imageProcessing_mask_green)
+        elif not self.camera.mask_green:
+            self.camera.remove_imageProcessing(self.camera.imageProcessing_mask_green)
+        
+        if self.camera.mask_blue:
+            self.camera.add_imageProcessing(self.camera.imageProcessing_mask_blue)
+        elif not self.camera.mask_blue:
+            self.camera.remove_imageProcessing(self.camera.imageProcessing_mask_blue)
+            
     
     def module_blur_gussian_callback(self):
         self.camera.isBlur_gussian = self.module_blur_gussian.isActive
@@ -821,6 +895,174 @@ class Slider_MaskHSV(CTkFrame):
         
         self.mainApp.slider_mask_hsv_callback()
 
+class Module_Grayscale(CTkFrame):
+    def __init__(self, master, mainApp, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
+        
+        self.mainApp = mainApp
+        self.mask_red = False
+        self.mask_green = False
+        self.mask_blue = False
+        self.callback = None
+        
+        self.configure(fg_color = Color().transparent)
+        
+        self.build_ui()
+    
+    def build_ui(self):
+        self.grid_rowconfigure(0, weight = 0)
+        self.grid_rowconfigure(1, weight = 1)
+        self.grid_columnconfigure(0, weight = 1)
+        
+        self.frame_module_title = CTkFrame(self, fg_color = Color().white,
+                                           corner_radius = 0)
+        self.frame_module_title.grid(row = 0, column = 0, sticky = EW)
+        self.frame_module_title.grid_columnconfigure(0, weight = 1)
+        self.frame_module_title.grid_rowconfigure(0, weight = 1)
+        
+        self.label_module_title = CTkLabel(self.frame_module_title, text = "Grayscale",
+                                           height = 15,
+                                           text_color = Color().black,
+                                           font = Font().module_label)
+        self.label_module_title.grid(row = 0, column = 0)
+        
+        self.frame_border = CTkFrame(self, fg_color = Color().transparent,
+                                      corner_radius = 0, 
+                                      border_width = 1, 
+                                      border_color = Color().white)
+        self.frame_border.grid(row = 1, column = 0, ipadx = 10, ipady = 10, sticky = NSEW)
+        self.frame_border.grid_rowconfigure(0, weight = 0)
+        self.frame_border.grid_columnconfigure(0, weight = 1)
+        
+        self.frame_active = CTkFrame(self.frame_border, fg_color = Color().transparent)
+        self.frame_active.grid(row = 0, column = 0, padx = (10,0), pady = (10,0), sticky = W)
+        self.frame_active.grid_columnconfigure((0,2), weight = 0)
+        self.frame_active.grid_columnconfigure((1), weight = 0, minsize = 5)
+        self.frame_active.grid_rowconfigure(0, weight = 1)
+        
+        self.checkbox_active = CTkCheckBox(self.frame_active, text = "",
+                                           width = 15, height = 15,
+                                           command = self.checkbox_active_callback)
+        self.checkbox_active.grid(row = 0, column = 0)
+        
+        self.label_active_title = CTkLabel(self.frame_active, text = "Grayscale",
+                                      height = 15)
+        self.label_active_title.grid(row = 0, column = 2, sticky = W)
+    
+    def checkbox_active_callback(self):
+        if self.checkbox_active.get():
+            self.isActive = True
+        else:
+            self.isActive = False
+        
+        if self.callback:
+            self.callback()
+    
+    def set_callback(self, callback):
+        self.callback = callback
+
+class Module_Mask_RGB(CTkFrame):
+    def __init__(self, master, mainApp, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
+        
+        self.mainApp = mainApp
+        self.mask_red = False
+        self.mask_green = False
+        self.mask_blue = False
+        self.callback = None
+        
+        self.configure(fg_color = Color().transparent)
+        
+        self.build_ui()
+    
+    def build_ui(self):
+        self.grid_rowconfigure(0, weight = 0)
+        self.grid_rowconfigure(1, weight = 1)
+        self.grid_columnconfigure(0, weight = 1)
+        
+        self.frame_module_title = CTkFrame(self, fg_color = Color().white,
+                                           corner_radius = 0)
+        self.frame_module_title.grid(row = 0, column = 0, sticky = EW)
+        self.frame_module_title.grid_columnconfigure(0, weight = 1)
+        self.frame_module_title.grid_rowconfigure(0, weight = 1)
+        
+        self.label_module_title = CTkLabel(self.frame_module_title, text = "RGB Mask",
+                                           height = 15,
+                                           text_color = Color().black,
+                                           font = Font().module_label)
+        self.label_module_title.grid(row = 0, column = 0)
+        
+        self.frame_border = CTkFrame(self, fg_color = Color().transparent,
+                                      corner_radius = 0, 
+                                      border_width = 1, 
+                                      border_color = Color().white)
+        self.frame_border.grid(row = 1, column = 0, ipadx = 10, ipady = 10, sticky = NSEW)
+        self.frame_border.grid_rowconfigure(0, weight = 0)
+        self.frame_border.grid_columnconfigure(0, weight = 1)
+        
+        self.frame_checkbox = CTkFrame(self.frame_border, fg_color = Color().transparent)
+        self.frame_checkbox.grid(row = 0, column = 0, padx = (10,0), pady = (10,0), sticky = W)
+        self.frame_checkbox.grid_columnconfigure((0,2), weight = 0)
+        self.frame_checkbox.grid_columnconfigure((1), weight = 0, minsize = 5)
+        self.frame_checkbox.grid_rowconfigure((0,1,2), weight = 0)
+        
+        self.checkbox_red = CTkCheckBox(self.frame_checkbox, text = "",
+                                           width = 15, height = 15,
+                                           command = self.checkbox_red_callback)
+        self.checkbox_red.grid(row = 0, column = 0)
+        
+        self.label_red_title = CTkLabel(self.frame_checkbox, text = "Mask Red",
+                                      height = 15)
+        self.label_red_title.grid(row = 0, column = 2, sticky = W)
+        
+        self.checkbox_green = CTkCheckBox(self.frame_checkbox, text = "",
+                                           width = 15, height = 15,
+                                           command = self.checkbox_green_callback)
+        self.checkbox_green.grid(row = 1, column = 0)
+        
+        self.label_green_title = CTkLabel(self.frame_checkbox, text = "Mask Green",
+                                      height = 15)
+        self.label_green_title.grid(row = 1, column = 2, sticky = W)
+        
+        self.checkbox_blue = CTkCheckBox(self.frame_checkbox, text = "",
+                                           width = 15, height = 15,
+                                           command = self.checkbox_blue_callback)
+        self.checkbox_blue.grid(row = 2, column = 0)
+        
+        self.label_blue_title = CTkLabel(self.frame_checkbox, text = "Mask Blue",
+                                      height = 15)
+        self.label_blue_title.grid(row = 2, column = 2, sticky = W)
+    
+    def checkbox_red_callback(self):
+        if self.checkbox_red.get():
+            self.mask_red = True
+        else:
+            self.mask_red = False
+        
+        if self.callback:
+            self.callback()
+    
+    def checkbox_green_callback(self):
+        if self.checkbox_green.get():
+            self.mask_green = True
+        else:
+            self.mask_green = False
+        
+        if self.callback:
+            self.callback()
+            
+    def checkbox_blue_callback(self):
+        if self.checkbox_blue.get():
+            self.mask_blue = True
+        else:
+            self.mask_blue = False
+        
+        if self.callback:
+            self.callback()
+    
+    def set_callback(self, callback):
+        self.callback = callback
+
 class Module_Blur_Gaussian(CTkFrame):
     def __init__(self, master, mainApp, *args, **kwargs):
         super().__init__(master, *args, **kwargs)
@@ -836,14 +1078,27 @@ class Module_Blur_Gaussian(CTkFrame):
         self.build_ui()
     
     def build_ui(self):
-        self.grid_rowconfigure(0, weight = 1)
+        self.grid_rowconfigure(0, weight = 0)
+        self.grid_rowconfigure(1, weight = 1)
         self.grid_columnconfigure(0, weight = 1)
+        
+        self.frame_module_title = CTkFrame(self, fg_color = Color().white,
+                                           corner_radius = 0)
+        self.frame_module_title.grid(row = 0, column = 0, sticky = EW)
+        self.frame_module_title.grid_columnconfigure(0, weight = 1)
+        self.frame_module_title.grid_rowconfigure(0, weight = 1)
+        
+        self.label_module_title = CTkLabel(self.frame_module_title, text = "Gaussian Blur",
+                                           height = 15,
+                                           text_color = Color().black,
+                                           font = Font().module_label)
+        self.label_module_title.grid(row = 0, column = 0)
         
         self.frame_border = CTkFrame(self, fg_color = Color().transparent,
                                       corner_radius = 0, 
                                       border_width = 1, 
                                       border_color = Color().white)
-        self.frame_border.grid(row = 0, column = 0, ipadx = 10, ipady = 10, sticky = NSEW)
+        self.frame_border.grid(row = 1, column = 0, ipadx = 10, ipady = 10, sticky = NSEW)
         self.frame_border.grid_rowconfigure((0,2), weight = 0)
         self.frame_border.grid_rowconfigure((1), weight = 0, minsize = 10)
         self.frame_border.grid_columnconfigure(0, weight = 1)
@@ -903,14 +1158,27 @@ class Module_Mask_Gray(CTkFrame):
         self.build_ui()
     
     def build_ui(self):
-        self.grid_rowconfigure(0, weight = 1)
+        self.grid_rowconfigure(0, weight = 0)
+        self.grid_rowconfigure(1, weight = 1)
         self.grid_columnconfigure(0, weight = 1)
+        
+        self.frame_module_title = CTkFrame(self, fg_color = Color().white,
+                                           corner_radius = 0)
+        self.frame_module_title.grid(row = 0, column = 0, sticky = EW)
+        self.frame_module_title.grid_columnconfigure(0, weight = 1)
+        self.frame_module_title.grid_rowconfigure(0, weight = 1)
+        
+        self.label_module_title = CTkLabel(self.frame_module_title, text = "Grayscale Mask",
+                                           height = 15,
+                                           text_color = Color().black,
+                                           font = Font().module_label)
+        self.label_module_title.grid(row = 0, column = 0)
         
         self.frame_border = CTkFrame(self, fg_color = Color().transparent,
                                       corner_radius = 0, 
                                       border_width = 1, 
                                       border_color = Color().white)
-        self.frame_border.grid(row = 0, column = 0, ipadx = 10, ipady = 10, sticky = NSEW)
+        self.frame_border.grid(row = 1, column = 0, ipadx = 10, ipady = 10, sticky = NSEW)
         self.frame_border.grid_rowconfigure((0,2), weight = 0)
         self.frame_border.grid_rowconfigure((1), weight = 0, minsize = 10)
         self.frame_border.grid_columnconfigure(0, weight = 1)
@@ -974,14 +1242,27 @@ class Module_Erosion(CTkFrame):
         self.build_ui()
     
     def build_ui(self):
-        self.grid_rowconfigure(0, weight = 1)
+        self.grid_rowconfigure(0, weight = 0)
+        self.grid_rowconfigure(1, weight = 1)
         self.grid_columnconfigure(0, weight = 1)
+        
+        self.frame_module_title = CTkFrame(self, fg_color = Color().white,
+                                           corner_radius = 0)
+        self.frame_module_title.grid(row = 0, column = 0, sticky = EW)
+        self.frame_module_title.grid_columnconfigure(0, weight = 1)
+        self.frame_module_title.grid_rowconfigure(0, weight = 1)
+        
+        self.label_module_title = CTkLabel(self.frame_module_title, text = "Erosion",
+                                           height = 15,
+                                           text_color = Color().black,
+                                           font = Font().module_label)
+        self.label_module_title.grid(row = 0, column = 0)
         
         self.frame_border = CTkFrame(self, fg_color = Color().transparent,
                                       corner_radius = 0, 
                                       border_width = 1, 
                                       border_color = Color().white)
-        self.frame_border.grid(row = 0, column = 0, ipadx = 10, ipady = 10, sticky = NSEW)
+        self.frame_border.grid(row = 1, column = 0, ipadx = 10, ipady = 10, sticky = NSEW)
         self.frame_border.grid_rowconfigure((0,2), weight = 0)
         self.frame_border.grid_rowconfigure((1), weight = 0, minsize = 10)
         self.frame_border.grid_columnconfigure(0, weight = 1)
@@ -1041,14 +1322,27 @@ class Module_Dilation(CTkFrame):
         self.build_ui()
     
     def build_ui(self):
-        self.grid_rowconfigure(0, weight = 1)
+        self.grid_rowconfigure(0, weight = 0)
+        self.grid_rowconfigure(1, weight = 1)
         self.grid_columnconfigure(0, weight = 1)
+        
+        self.frame_module_title = CTkFrame(self, fg_color = Color().white,
+                                           corner_radius = 0)
+        self.frame_module_title.grid(row = 0, column = 0, sticky = EW)
+        self.frame_module_title.grid_columnconfigure(0, weight = 1)
+        self.frame_module_title.grid_rowconfigure(0, weight = 1)
+        
+        self.label_module_title = CTkLabel(self.frame_module_title, text = "Dilation",
+                                           height = 15,
+                                           text_color = Color().black,
+                                           font = Font().module_label)
+        self.label_module_title.grid(row = 0, column = 0)
         
         self.frame_border = CTkFrame(self, fg_color = Color().transparent,
                                       corner_radius = 0, 
                                       border_width = 1, 
                                       border_color = Color().white)
-        self.frame_border.grid(row = 0, column = 0, ipadx = 10, ipady = 10, sticky = NSEW)
+        self.frame_border.grid(row = 1, column = 0, ipadx = 10, ipady = 10, sticky = NSEW)
         self.frame_border.grid_rowconfigure((0,2), weight = 0)
         self.frame_border.grid_rowconfigure((1), weight = 0, minsize = 10)
         self.frame_border.grid_columnconfigure(0, weight = 1)
@@ -1108,14 +1402,27 @@ class Module_MorphOpen(CTkFrame):
         self.build_ui()
     
     def build_ui(self):
-        self.grid_rowconfigure(0, weight = 1)
+        self.grid_rowconfigure(0, weight = 0)
+        self.grid_rowconfigure(1, weight = 1)
         self.grid_columnconfigure(0, weight = 1)
+        
+        self.frame_module_title = CTkFrame(self, fg_color = Color().white,
+                                           corner_radius = 0)
+        self.frame_module_title.grid(row = 0, column = 0, sticky = EW)
+        self.frame_module_title.grid_columnconfigure(0, weight = 1)
+        self.frame_module_title.grid_rowconfigure(0, weight = 1)
+        
+        self.label_module_title = CTkLabel(self.frame_module_title, text = "Morphological Opening",
+                                           height = 15,
+                                           text_color = Color().black,
+                                           font = Font().module_label)
+        self.label_module_title.grid(row = 0, column = 0)
         
         self.frame_border = CTkFrame(self, fg_color = Color().transparent,
                                       corner_radius = 0, 
                                       border_width = 1, 
                                       border_color = Color().white)
-        self.frame_border.grid(row = 0, column = 0, ipadx = 10, ipady = 10, sticky = NSEW)
+        self.frame_border.grid(row = 1, column = 0, ipadx = 10, ipady = 10, sticky = NSEW)
         self.frame_border.grid_rowconfigure((0,2), weight = 0)
         self.frame_border.grid_rowconfigure((1), weight = 0, minsize = 10)
         self.frame_border.grid_columnconfigure(0, weight = 1)
@@ -1137,8 +1444,8 @@ class Module_MorphOpen(CTkFrame):
         
         self.slider_kernel = Slider_Kernel_xy(self.frame_border)
         self.slider_kernel.set_callback(self.updateValue)
-        self.slider_kernel.slider_kernelx.configure(from_ = 1, to = 10, number_of_steps = 10)
-        self.slider_kernel.slider_kernely.configure(from_ = 1, to = 10, number_of_steps = 10)
+        self.slider_kernel.slider_kernelx.configure(from_ = 1, to = 100, number_of_steps = 100)
+        self.slider_kernel.slider_kernely.configure(from_ = 1, to = 100, number_of_steps = 100)
         self.slider_kernel.grid(row = 2, column = 0)
     
     def checkbox_active_callback(self):
@@ -1175,14 +1482,27 @@ class Module_MorphClose(CTkFrame):
         self.build_ui()
     
     def build_ui(self):
-        self.grid_rowconfigure(0, weight = 1)
+        self.grid_rowconfigure(0, weight = 0)
+        self.grid_rowconfigure(1, weight = 1)
         self.grid_columnconfigure(0, weight = 1)
+        
+        self.frame_module_title = CTkFrame(self, fg_color = Color().white,
+                                           corner_radius = 0)
+        self.frame_module_title.grid(row = 0, column = 0, sticky = EW)
+        self.frame_module_title.grid_columnconfigure(0, weight = 1)
+        self.frame_module_title.grid_rowconfigure(0, weight = 1)
+        
+        self.label_module_title = CTkLabel(self.frame_module_title, text = "Morphological Closing",
+                                           height = 15,
+                                           text_color = Color().black,
+                                           font = Font().module_label)
+        self.label_module_title.grid(row = 0, column = 0)
         
         self.frame_border = CTkFrame(self, fg_color = Color().transparent,
                                       corner_radius = 0, 
                                       border_width = 1, 
                                       border_color = Color().white)
-        self.frame_border.grid(row = 0, column = 0, ipadx = 10, ipady = 10, sticky = NSEW)
+        self.frame_border.grid(row = 1, column = 0, ipadx = 10, ipady = 10, sticky = NSEW)
         self.frame_border.grid_rowconfigure((0,2), weight = 0)
         self.frame_border.grid_rowconfigure((1), weight = 0, minsize = 10)
         self.frame_border.grid_columnconfigure(0, weight = 1)
@@ -1204,8 +1524,8 @@ class Module_MorphClose(CTkFrame):
         
         self.slider_kernel = Slider_Kernel_xy(self.frame_border)
         self.slider_kernel.set_callback(self.updateValue)
-        self.slider_kernel.slider_kernelx.configure(from_ = 1, to = 10, number_of_steps = 10)
-        self.slider_kernel.slider_kernely.configure(from_ = 1, to = 10, number_of_steps = 10)
+        self.slider_kernel.slider_kernelx.configure(from_ = 1, to = 100, number_of_steps = 100)
+        self.slider_kernel.slider_kernely.configure(from_ = 1, to = 100, number_of_steps = 100)
         self.slider_kernel.grid(row = 2, column = 0)
     
     def checkbox_active_callback(self):
@@ -1242,14 +1562,27 @@ class Module_MorphGradient(CTkFrame):
         self.build_ui()
     
     def build_ui(self):
-        self.grid_rowconfigure(0, weight = 1)
+        self.grid_rowconfigure(0, weight = 0)
+        self.grid_rowconfigure(1, weight = 1)
         self.grid_columnconfigure(0, weight = 1)
+        
+        self.frame_module_title = CTkFrame(self, fg_color = Color().white,
+                                           corner_radius = 0)
+        self.frame_module_title.grid(row = 0, column = 0, sticky = EW)
+        self.frame_module_title.grid_columnconfigure(0, weight = 1)
+        self.frame_module_title.grid_rowconfigure(0, weight = 1)
+        
+        self.label_module_title = CTkLabel(self.frame_module_title, text = "Morphological Gradient",
+                                           height = 15,
+                                           text_color = Color().black,
+                                           font = Font().module_label)
+        self.label_module_title.grid(row = 0, column = 0)
         
         self.frame_border = CTkFrame(self, fg_color = Color().transparent,
                                       corner_radius = 0, 
                                       border_width = 1, 
                                       border_color = Color().white)
-        self.frame_border.grid(row = 0, column = 0, ipadx = 10, ipady = 10, sticky = NSEW)
+        self.frame_border.grid(row = 1, column = 0, ipadx = 10, ipady = 10, sticky = NSEW)
         self.frame_border.grid_rowconfigure((0,2), weight = 0)
         self.frame_border.grid_rowconfigure((1), weight = 0, minsize = 10)
         self.frame_border.grid_columnconfigure(0, weight = 1)
