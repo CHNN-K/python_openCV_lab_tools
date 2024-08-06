@@ -110,11 +110,13 @@ class ThreadCamera(threading.Thread):
                 self.image = image
                 
             except Exception as error:
-                image = self.showErrorImage()
-                
-                self.showImage = cv2.resize(image,(0,0),fx = 0.4, fy = 0.4)
-                self.image = image
-                pass
+                try:
+                    image = self.showErrorImage()
+                    
+                    self.showImage = cv2.resize(image,(0,0),fx = 0.4, fy = 0.4)
+                    self.image = image
+                except:
+                    pass
         print("Camera thread stop")
     
     def imageProcessing(self, image):
@@ -207,14 +209,23 @@ class ThreadCamera(threading.Thread):
             self.videoCapture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
        
     def showErrorImage(self):
-        image = np.zeros((self.height, self.width, 3), dtype = np.uint8)
+        image = self.frame
+        
         text = "IMAGE ERROR"
         font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = 2
+        font_scale = 3
         font_thickness = 3
         (text_width, text_height), _ = cv2.getTextSize(text, font, font_scale, font_thickness)
         text_x = (image.shape[1] - text_width) // 2
         text_y = (image.shape[0] + text_height) // 2
+        
+        rect_width = text_width + 100
+        rect_height = text_height + 50
+        rect_color = (0, 0, 0)
+        rect_x = (image.shape[1] - rect_width) // 2
+        rect_y = (image.shape[0] - rect_height) // 2
+        
+        cv2.rectangle(image, (rect_x, rect_y), (rect_x + rect_width, rect_y + rect_height), rect_color, -1)
         cv2.putText(image, text, (text_x, text_y), font, font_scale, (255,255,255), font_thickness)
         return image
         
