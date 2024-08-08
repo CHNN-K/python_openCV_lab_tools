@@ -4,6 +4,7 @@ from PIL import Image
 import numpy as np
 import threading
 import colorsys
+import time
 from datetime import datetime
 import easyocr
 
@@ -18,6 +19,10 @@ class ThreadCamera(threading.Thread):
         self.width = 2592
         self.height = 1944
         self.videoCapture = None
+        
+        self.fps = 0
+        self.start_time = time.time()
+        self.frameCount = 0
         
         self.image = None
         self.showImage = None
@@ -86,6 +91,7 @@ class ThreadCamera(threading.Thread):
             try:
                 self.ret, self.frame = self.videoCapture.read()
                 self.frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2RGB)
+                self.calculateFPS()
             except:
                 pass
             
@@ -207,7 +213,7 @@ class ThreadCamera(threading.Thread):
             self.videoCapture = cv2.VideoCapture(self.cameraNumber)
             self.videoCapture.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
             self.videoCapture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
-       
+    
     def showErrorImage(self):
         image = self.frame
         
@@ -228,7 +234,18 @@ class ThreadCamera(threading.Thread):
         cv2.rectangle(image, (rect_x, rect_y), (rect_x + rect_width, rect_y + rect_height), rect_color, -1)
         cv2.putText(image, text, (text_x, text_y), font, font_scale, (255,255,255), font_thickness)
         return image
+    
+    def calculateFPS(self):
+        current_time = time.time()
+        self.frameCount += 1
         
+        elapsed_time = current_time - self.start_time
+        if elapsed_time > 1:
+            fps = self.frameCount / elapsed_time
+            self.fps = f"{fps:.2f}"
+            self.frameCount = 0
+            self.start_time = current_time
+    
     def snapshotImage(self):
         snapshot = Image.fromarray(np.array(self.frame))
         try:
@@ -562,13 +579,8 @@ class MainApp(CTk):
         super().__init__()
 
         # Variable
-        self.isGray = False
-        self.isBlur = False
-        self.isMask_hsv = False
-        self.isErosion = False
-        self.isDilation = False
-        self.isMorphOpen = False
-        self.isMorphClose = False
+        self.programFPS = 0
+        self.programFPS_start_time = time.time()
         
         self.comboBox_var_blur = ["Gaussian Blurring", "Averaging", "Median Blurring", "Bilateral Filtering "]
         
@@ -580,8 +592,9 @@ class MainApp(CTk):
         
         set_appearance_mode("Dark")
         self.title("Custom OpenCV")
-        self.bind("<Escape>", lambda event : self.exitApplication())
         self.protocol("WM_DELETE_WINDOW", self.exitApplication)
+        self.bind("<Escape>", lambda event : self.exitApplication())
+        self.bind("<F1>", self.program_keyboard_command)
         
         self.camera = ThreadCamera()
         self.camera.start()
@@ -621,6 +634,19 @@ class MainApp(CTk):
         self.showCameraImage_ui = CTkLabel(self.displayCamera, text = "",
                                     fg_color = Color().transparent)
         self.showCameraImage_ui.place(relx = 0.5, rely = 0.5, anchor = CENTER)
+        
+        self.frame_program_fps = CTkFrame(self.displayCamera, fg_color = Color().transparent,
+                                          corner_radius = 0,
+                                          border_width = 0)
+        self.frame_program_fps.place(relx = 1, rely = 1, anchor = SE)
+        self.frame_program_fps.grid_rowconfigure(0, weight = 1)
+        self.frame_program_fps.grid_columnconfigure(0, weight = 1)
+        
+        self.label_program_fps = CTkLabel(self.frame_program_fps, text = "FPS: 0.00",
+                                          width = 75,
+                                          font = (Font().font, 12),
+                                          text_color = Color().white)
+        self.label_program_fps.grid(row = 0, column = 0)
         
         self.slider_rotate = CTkSlider(self.frame_camera,
                                     width = int(2592/2.5),
@@ -844,6 +870,7 @@ class MainApp(CTk):
         try:
             self.processImage = Image.fromarray(self.camera.showImage)
             self.showCameraImage_ui.configure(image = CTkImage(self.processImage, size = (int(self.camera.width/2.5), self.camera.height/2.5)))
+            self.label_program_fps.configure(text = f"FPS: {self.camera.fps}")
             
             # Update if cancel perspective select point
             if self.camera.isPerspectiveTransform:    
@@ -868,6 +895,14 @@ class MainApp(CTk):
         self.entry_ocrInspection_result.delete(0, END)
         self.entry_ocrInspection_result.insert(1, self.camera.ocrResult)
     
+    def program_keyboard_command(self, event):
+        # Show/Hide Camera FPS
+        if event.keysym == "F1":
+            if self.frame_program_fps.place_info():
+                self.frame_program_fps.place_forget()
+            else:
+                self.frame_program_fps.place(relx = 1, rely = 1, anchor = SE)
+            
     def exitApplication(self):
         self.camera.videoCapture.release()
         self.camera.stop()
