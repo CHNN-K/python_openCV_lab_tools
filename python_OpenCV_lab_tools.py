@@ -13,7 +13,8 @@ class ThreadCamera(threading.Thread):
         threading.Thread.__init__(self)
         self._stop_event = threading.Event()
         self.debug = False
-                
+        
+        self.isSelectCamera = False
         self.cameraList = []
         self.cameraNumber = 0
         self.width = 2592
@@ -31,6 +32,7 @@ class ThreadCamera(threading.Thread):
         self.isPerspectivePointSet = False
         
         self.isGray = False
+        self.isGrayChannel = False
         self.isBlur = False
         self.isBlur_gussian = False
         self.isMask_hsv = False
@@ -50,6 +52,8 @@ class ThreadCamera(threading.Thread):
         self.perspective_transform_pointBL = [0,0]
         self.perspective_transform_pointBR = [0,0]
         self.perspective_transform_pointBT = [0,0]
+        
+        self.gray_channel = 0
         
         self.mask_red = False
         self.mask_green = False
@@ -84,9 +88,13 @@ class ThreadCamera(threading.Thread):
         
         self.ocrResult = ""
         
-        self.cameraSetup()
-        
     def run(self):
+        while self.isSelectCamera == False:
+            time.sleep(0.1)
+            pass
+        
+        self.cameraSetup(self.cameraNumber)
+        
         while not self._stop_event.is_set():
             try:
                 self.ret, self.frame = self.videoCapture.read()
@@ -125,6 +133,9 @@ class ThreadCamera(threading.Thread):
                     pass
         print("Camera thread stop")
     
+    def stop(self):
+        self._stop_event.set()
+    
     def imageProcessing(self, image):
         if len(self.imageProcessingOrder) > 0:
             for func in self.imageProcessingOrder:
@@ -150,6 +161,10 @@ class ThreadCamera(threading.Thread):
         # Print Order Function List
         print(self.imageProcessingOrderName)
     
+    def reset_imageProcessing(self):
+        self.imageProcessingOrder.clear()
+        self.imageProcessingOrderName.clear()
+    
     def imageProcessing_transform_perspective(self, image):
         if self.isPerspectivePointSet == False:
             self.savePerspectiveTransformPoint()
@@ -173,6 +188,9 @@ class ThreadCamera(threading.Thread):
     
     def imageProcessing_grayscale(self, image):
         return ImageProcessing.grayscale(image)
+    
+    def imageProcessing_grayscale_channel(self, image):
+        return ImageProcessing.grayscale_channel(image, self.gray_channel)
     
     def imageProcessing_blur_gaussian(self, image):
         return ImageProcessing.gaussianBlur(image, self.blur_gussian_kernel_x, self.blur_gussian_kernel_y)
@@ -198,11 +216,8 @@ class ThreadCamera(threading.Thread):
     def imageProcessing_morph_gradient(self, image):
         return ImageProcessing.morphGradient(image, self.morph_gradient_kernel_x, self.morph_gradient_kernel_y)
     
-    def stop(self):
-        self._stop_event.set()
-    
-    def cameraSetup(self):
-        self.videoCapture = cv2.VideoCapture(self.cameraNumber)
+    def cameraSetup(self, cameraNumber : int):
+        self.videoCapture = cv2.VideoCapture(cameraNumber)
         self.videoCapture.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         self.videoCapture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
     
@@ -386,7 +401,7 @@ class ThreadCamera(threading.Thread):
                 cv2.destroyWindow("Select_Transform")
                 break
     
-    def selctOCRInspection(self):
+    def selectOCRInspection(self):
         global mousePos, processImage, color, isDrawing, isSelected, mousePosClick, ocr_point_tl, ocr_point_br
     
         image = self.image.copy()
@@ -471,6 +486,10 @@ class ImageProcessing:
     
     def grayscale(image):
         img = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+        return img
+    
+    def grayscale_channel(image, channel):
+        img = image[:,:,channel]
         return img
     
     def removeRed_channel(image):
@@ -596,8 +615,9 @@ class MainApp(CTk):
         self.bind("<Escape>", lambda event : self.exitApplication())
         self.bind("<F1>", self.program_keyboard_command)
         
+        self.toplevel_camera_selection = Toplevel_Camera_Selection(self, self.toplevel_camera_selection_callback)
+        
         self.camera = ThreadCamera()
-        self.camera.start()
         
         self.build_ui()
         self.FixedUpdate()
@@ -734,6 +754,9 @@ class MainApp(CTk):
         self.btn_OCRInspection = CTkButton(self.mainframe, text = "OCR Inspection", command = self.btn_OCRInspection_callback)
         self.btn_OCRInspection.grid(row = 4, column = 2)
         
+        self.btn_reset = CTkButton(self.mainframe, text = "Reset", command = self.resetModule)
+        # self.btn_reset.grid(row = 5, column = 2)
+        
         self.checkbox_isMask_hsv = CTkCheckBox(self.mainframe, text = "HSV Mask", command = self.checkbox_mask_hsv_callback)
         # self.checkbox_isMask_hsv.pack()
         
@@ -767,12 +790,19 @@ class MainApp(CTk):
         self.camera.mask_hsv_lower = self.slider_mask_hsv.lower_range
     
     def module_grayscale_callback(self):
-        self.camera.isGray = self.module_grayscale.isActive
+        self.camera.isGray = self.module_grayscale.grayscale_isActive
+        self.camera.isGrayChannel = self.module_grayscale.grayscale_channel_isActive
+        self.camera.gray_channel = self.module_grayscale.grayscale_channel
         
         if self.camera.isGray:
             self.camera.add_imageProcessing(self.camera.imageProcessing_grayscale)
-        else:
+        elif not self.camera.isGray:
             self.camera.remove_imageProcessing(self.camera.imageProcessing_grayscale)
+            
+        if self.camera.isGrayChannel:
+            self.camera.add_imageProcessing(self.camera.imageProcessing_grayscale_channel)
+        elif not self.camera.isGrayChannel:
+            self.camera.remove_imageProcessing(self.camera.imageProcessing_grayscale_channel)
     
     def module_mask_rgb_callback(self):
         self.camera.mask_red = self.module_mask_rgb.mask_red
@@ -880,6 +910,11 @@ class MainApp(CTk):
         except:
             pass
     
+    def resetModule(self):
+        self.camera.reset_imageProcessing()
+        self.module_grayscale.reset()
+        self.module_mask_rgb.reset()
+    
     def checkbox_perspectiveTransform_callback(self):
         if self.checkbox_isPerspectiveTransform.get():
             self.camera.isPerspectiveTransform = True
@@ -891,9 +926,14 @@ class MainApp(CTk):
         self.camera.isPerspectivePointSet = False
         
     def btn_OCRInspection_callback(self):
-        self.camera.selctOCRInspection()
+        self.camera.selectOCRInspection()
         self.entry_ocrInspection_result.delete(0, END)
         self.entry_ocrInspection_result.insert(1, self.camera.ocrResult)
+    
+    def toplevel_camera_selection_callback(self):
+        self.camera.cameraSetup(self.toplevel_camera_selection.cameraNumber)
+        self.camera.isSelectCamera = True
+        self.camera.start()
     
     def program_keyboard_command(self, event):
         # Show/Hide Camera FPS
@@ -904,7 +944,8 @@ class MainApp(CTk):
                 self.frame_program_fps.place(relx = 1, rely = 1, anchor = SE)
             
     def exitApplication(self):
-        self.camera.videoCapture.release()
+        if self.camera.isSelectCamera:
+            self.camera.videoCapture.release()
         self.camera.stop()
         self.destroy()
 
@@ -946,10 +987,12 @@ class Module_Grayscale(CTkFrame):
         super().__init__(master, *args, **kwargs)
         
         self.mainApp = mainApp
-        self.mask_red = False
-        self.mask_green = False
-        self.mask_blue = False
+        self.grayscale_isActive = False
+        self.grayscale_channel_isActive = False
+        self.grayscale_channel = 0
         self.callback = None
+        
+        self.channel = ["R", "G", "B"]
         
         self.configure(fg_color = Color().transparent)
         
@@ -980,32 +1023,70 @@ class Module_Grayscale(CTkFrame):
         self.frame_border.grid_rowconfigure(0, weight = 0)
         self.frame_border.grid_columnconfigure(0, weight = 1)
         
-        self.frame_active = CTkFrame(self.frame_border, fg_color = Color().transparent)
-        self.frame_active.grid(row = 0, column = 0, padx = (10,0), pady = (10,0), sticky = W)
-        self.frame_active.grid_columnconfigure((0,2), weight = 0)
-        self.frame_active.grid_columnconfigure((1), weight = 0, minsize = 5)
-        self.frame_active.grid_rowconfigure(0, weight = 1)
+        self.frame_checkbox = CTkFrame(self.frame_border, fg_color = Color().transparent)
+        self.frame_checkbox.grid(row = 0, column = 0, padx = (10,0), pady = (10,0), sticky = W)
+        self.frame_checkbox.grid_columnconfigure((0,2), weight = 0)
+        self.frame_checkbox.grid_columnconfigure((1), weight = 0, minsize = 5)
+        self.frame_checkbox.grid_rowconfigure(0, weight = 1)
         
-        self.checkbox_active = CTkCheckBox(self.frame_active, text = "",
+        self.checkbox_grayscale = CTkCheckBox(self.frame_checkbox, text = "",
                                            width = 15, height = 15,
-                                           command = self.checkbox_active_callback)
-        self.checkbox_active.grid(row = 0, column = 0)
+                                           command = self.checkbox_grayscale_callback)
+        self.checkbox_grayscale.grid(row = 0, column = 0)
         
-        self.label_active_title = CTkLabel(self.frame_active, text = "Grayscale",
+        self.label_grayscale_title = CTkLabel(self.frame_checkbox, text = "Grayscale",
                                       height = 15)
-        self.label_active_title.grid(row = 0, column = 2, sticky = W)
+        self.label_grayscale_title.grid(row = 0, column = 2, sticky = W)
+        
+        self.checkbox_grayscale_channel = CTkCheckBox(self.frame_checkbox, text = "",
+                                           width = 15, height = 15,
+                                           command = self.checkbox_grayscale_channel_callback)
+        self.checkbox_grayscale_channel.grid(row = 1, column = 0)
+        
+        self.label_grayscale_channel_title = CTkLabel(self.frame_checkbox, text = "Channel Grayscale",
+                                      height = 15)
+        self.label_grayscale_channel_title.grid(row = 1, column = 2, sticky = W)
+        
+        self.segment_btn_grayscale_channel = CTkSegmentedButton(self.frame_checkbox, values = self.channel,
+                                                                command = self.segment_btn_grayscale_channel_callback)
+        self.segment_btn_grayscale_channel.set(self.channel[0])
+        self.segment_btn_grayscale_channel.grid(row = 2, column = 2, sticky = W)
     
-    def checkbox_active_callback(self):
-        if self.checkbox_active.get():
-            self.isActive = True
+    def checkbox_grayscale_callback(self):
+        if self.checkbox_grayscale.get():
+            self.grayscale_isActive = True
         else:
-            self.isActive = False
+            self.grayscale_isActive = False
+        
+        if self.callback:
+            self.callback()
+    
+    def checkbox_grayscale_channel_callback(self):
+        if self.checkbox_grayscale_channel.get():
+            self.grayscale_channel_isActive = True
+        else:
+            self.grayscale_channel_isActive = False
+        
+        if self.callback:
+            self.callback()
+    
+    def segment_btn_grayscale_channel_callback(self, value):
+        self.grayscale_channel = self.channel.index(value)
         
         if self.callback:
             self.callback()
     
     def set_callback(self, callback):
         self.callback = callback
+        
+    def reset(self):
+        self.grayscale_isActive = False
+        self.grayscale_channel_isActive = False
+        self.checkbox_grayscale.deselect()
+        self.checkbox_grayscale_channel.deselect()
+        
+        if self.callback:
+            self.callback()
 
 class Module_Mask_RGB(CTkFrame):
     def __init__(self, master, mainApp, *args, **kwargs):
@@ -1108,6 +1189,17 @@ class Module_Mask_RGB(CTkFrame):
     
     def set_callback(self, callback):
         self.callback = callback
+        
+    def reset(self):
+        self.mask_red = False
+        self.checkbox_red.deselect()
+        self.mask_green = False
+        self.checkbox_green.deselect()
+        self.mask_blue = False
+        self.checkbox_blue.deselect()
+        
+        if self.callback:
+            self.callback()
 
 class Module_Blur_Gaussian(CTkFrame):
     def __init__(self, master, mainApp, *args, **kwargs):
@@ -1986,6 +2078,82 @@ class Slider_xy(CTkFrame):
     
     def set_callback(self, callback):
         self.callback = callback
- 
+
+class Toplevel_Camera_Selection(CTkToplevel):
+    def __init__(self, master, callback, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
+        
+        # Variable
+        self.cameraNumber = 0
+        self.isCameraSelect = False
+        self.callback = callback
+        
+        # Setting
+        self.attributes("-topmost", False)  # Always on top
+        self.protocol("WM_DELETE_WINDOW", self.quit)
+        
+        screen_width = 400
+        screen_height = 250
+        self.geometry(f"{screen_width}x{screen_height}+{960-int(screen_width/2)}+{540-int(screen_height/2)}")
+        
+        self.title("Select Camera")
+        
+        self.resizable(False,False)
+        
+        """ Main """
+        self.build_ui()
+        self.bringToTop()
+
+    def build_ui(self):
+        self.grid_rowconfigure(0, weight = 1)
+        self.grid_columnconfigure(0, weight = 1)
+        
+        self.frame_main = CTkFrame(self, fg_color = Color().transparent)
+        self.frame_main.grid_rowconfigure(0, weight = 1)
+        self.frame_main.grid_columnconfigure(0, weight = 1)
+        self.frame_main.grid(row = 0, column = 0, sticky = NSEW)
+
+        self.frame_camera_selection = CTkFrame(self.frame_main, fg_color = Color().transparent)
+        self.frame_camera_selection.grid_rowconfigure(0, weight = 0)
+        self.frame_camera_selection.grid_columnconfigure(0, weight = 1)
+        self.frame_camera_selection.grid(row = 0, column = 0)
+        
+        self.label_camera_number_title = CTkLabel(self.frame_camera_selection, text = "Camera Number",
+                                                  text_color = Color().white)
+        self.label_camera_number_title.grid(row = 0, column = 0, sticky = W)
+        
+        camera_number_list = ["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "10"]
+        self.combobox_camera_number = CTkComboBox(self.frame_camera_selection, values = camera_number_list,
+                                                  command = self.combobox_camera_number_callback)
+        self.combobox_camera_number.set("0")
+        self.combobox_camera_number.grid(row = 1, column = 0, pady = (0, 20), sticky = EW)
+        
+        self.btn_ok = CTkButton(self.frame_camera_selection, text = "OK",
+                                width = 100, height = 50,
+                                corner_radius = 0,
+                                border_width = 0,
+                                command = self.btn_ok_callback)
+        self.btn_ok.grid(row = 2, column = 0)
+    
+    def bringToTop(self):
+        self.after(100, lambda: self.attributes("-topmost", True))
+        self.after(400, lambda: self.attributes("-topmost", False))
+    
+    def combobox_camera_number_callback(self, choice):
+        self.cameraNumber = choice
+    
+    def btn_ok_callback(self):
+        if self.cameraNumber == None:
+            return
+        
+        self.isCameraSelect = True
+        if self.callback:
+            self.callback()
+        self.destroy()
+    
+    def quit(self):
+        if not self.isCameraSelect:
+            self.master.exitApplication()
+            
 app = MainApp()
 app.mainloop()
