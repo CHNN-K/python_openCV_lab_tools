@@ -13,6 +13,7 @@ class ThreadCamera(threading.Thread):
         threading.Thread.__init__(self)
         self._stop_event = threading.Event()
         self.debug = False
+        self.daemon = True
         
         self.isSelectCamera = False
         self.cameraList = []
@@ -31,6 +32,7 @@ class ThreadCamera(threading.Thread):
         self.isPerspectiveTransform = False
         self.isPerspectivePointSet = False
         
+        self.isInvert = False
         self.isGray = False
         self.isGrayChannel = False
         self.isBlur = False
@@ -176,6 +178,9 @@ class ThreadCamera(threading.Thread):
                                                         self.perspective_transform_pointBL, 
                                                         self.perspective_transform_pointBR, 
                                                         self.perspective_transform_pointBT)
+    
+    def imageProcessing_invert(self, image):
+        return ImageProcessing.invert(image)
     
     def imageProcessing_mask_red(self, image):
         return ImageProcessing.removeRed_channel(image)
@@ -390,7 +395,8 @@ class ThreadCamera(threading.Thread):
                 cv2.destroyWindow("Select_Transform")
                 return
             
-        cv2.namedWindow('Select_Transform')
+        cv2.namedWindow('Select_Transform', cv2.WINDOW_NORMAL)
+        cv2.resizeWindow('Select_Transform', 1200,900)
         cv2.setMouseCallback('Select_Transform', selectTransformPoint)
         
         while self.isPerspectivePointSet == False:
@@ -463,7 +469,8 @@ class ThreadCamera(threading.Thread):
                 self.ocrResult = ImageProcessing.OCRInspection(self.image, ocr_point_tl, ocr_point_br)
                 return
             
-        cv2.namedWindow('OCR_Inspection')
+        cv2.namedWindow('OCR_Inspection', cv2.WINDOW_NORMAL)
+        cv2.resizeWindow('OCR_Inspection', 1200,900)
         cv2.setMouseCallback('OCR_Inspection', selectROIOCR)
         
         while isSelected == False:
@@ -483,6 +490,10 @@ class ImageProcessing:
         rot_mat = cv2.getRotationMatrix2D(image_center, angle, 1.0)
         result = cv2.warpAffine(image, rot_mat, image.shape[1::-1], flags = cv2.INTER_LINEAR)
         return result
+    
+    def invert(image):
+        img  = cv2.bitwise_not(image)
+        return img
     
     def grayscale(image):
         img = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
@@ -598,9 +609,6 @@ class MainApp(CTk):
         super().__init__()
 
         # Variable
-        self.programFPS = 0
-        self.programFPS_start_time = time.time()
-        
         self.comboBox_var_blur = ["Gaussian Blurring", "Averaging", "Median Blurring", "Bilateral Filtering "]
         
         # Screen Setting
@@ -715,44 +723,48 @@ class MainApp(CTk):
         self.btn_savePerspectiveTransform = CTkButton(self, text = "Reset Perspective Transform", command = self.btn_resetPerspectiveTransform_callback)
         self.btn_savePerspectiveTransform.place(relx = 0.85, rely = 0.13, anchor = CENTER)
         
+        self.module_invert = Module_Invert(self.mainframe, self)
+        self.module_invert.set_callback(self.module_invert_callback)
+        self.module_invert.grid(row = 0, column = 0)
+        
         self.module_grayscale = Module_Grayscale(self.mainframe, self)
         self.module_grayscale.set_callback(self.module_grayscale_callback)
-        self.module_grayscale.grid(row = 0, column = 0)
+        self.module_grayscale.grid(row = 1, column = 0)
         
         self.module_mask_rgb = Module_Mask_RGB(self.mainframe, self)
         self.module_mask_rgb.set_callback(self.module_mask_rgb_callback)
-        self.module_mask_rgb.grid(row = 1, column = 0)
+        self.module_mask_rgb.grid(row = 2, column = 0)
         
         self.module_blur_gussian = Module_Blur_Gaussian(self.mainframe, self)
         self.module_blur_gussian.set_callback(self.module_blur_gussian_callback)
-        self.module_blur_gussian.grid(row = 2, column = 0)
+        self.module_blur_gussian.grid(row = 3, column = 0)
         
         self.module_mask_gray = Module_Mask_Gray(self.mainframe, self)
         self.module_mask_gray.set_callback(self.module_mask_gray_callback)
-        self.module_mask_gray.grid(row = 3, column = 0)
+        self.module_mask_gray.grid(row = 4, column = 0)
         
         self.module_erosion = Module_Erosion(self.mainframe, self)
         self.module_erosion.set_callback(self.module_erosion_callback)
-        self.module_erosion.grid(row = 4, column = 0)
+        self.module_erosion.grid(row = 0, column = 2)
         
         self.module_dilation = Module_Dilation(self.mainframe, self)
         self.module_dilation.set_callback(self.module_dilation_callback)
-        self.module_dilation.grid(row = 0, column = 2)
+        self.module_dilation.grid(row = 1, column = 2)
         
         self.module_morph_open = Module_MorphOpen(self.mainframe, self)
         self.module_morph_open.set_callback(self.module_morph_open_callback)
-        self.module_morph_open.grid(row = 1, column = 2)
+        self.module_morph_open.grid(row = 2, column = 2)
         
         self.module_morph_close = Module_MorphClose(self.mainframe, self)
         self.module_morph_close.set_callback(self.module_morph_close_callback)
-        self.module_morph_close.grid(row = 2, column = 2)
+        self.module_morph_close.grid(row = 3, column = 2)
         
         self.module_morph_gradient = Module_MorphGradient(self.mainframe, self)
         self.module_morph_gradient.set_callback(self.module_morph_gradient_callback)
-        self.module_morph_gradient.grid(row = 3, column = 2)
+        self.module_morph_gradient.grid(row = 4, column = 2)
         
         self.btn_OCRInspection = CTkButton(self.mainframe, text = "OCR Inspection", command = self.btn_OCRInspection_callback)
-        self.btn_OCRInspection.grid(row = 4, column = 2)
+        self.btn_OCRInspection.grid(row = 5, column = 2)
         
         self.btn_reset = CTkButton(self.mainframe, text = "Reset", command = self.resetModule)
         # self.btn_reset.grid(row = 5, column = 2)
@@ -788,6 +800,14 @@ class MainApp(CTk):
     def slider_mask_hsv_callback(self):
         self.camera.mask_hsv_upper = self.slider_mask_hsv.upper_range
         self.camera.mask_hsv_lower = self.slider_mask_hsv.lower_range
+    
+    def module_invert_callback(self):
+        self.camera.isInvert = self.module_invert.isActive
+        
+        if self.camera.isInvert:
+            self.camera.add_imageProcessing(self.camera.imageProcessing_invert)
+        else:
+            self.camera.remove_imageProcessing(self.camera.imageProcessing_invert)
     
     def module_grayscale_callback(self):
         self.camera.isGray = self.module_grayscale.grayscale_isActive
@@ -981,6 +1001,76 @@ class Slider_MaskHSV(CTkFrame):
         self.lower_range = list(self.slider_mask_hsv_lower.rgb)
         
         self.mainApp.slider_mask_hsv_callback()
+
+class Module_Invert(CTkFrame):
+    def __init__(self, master, mainApp, *args, **kwargs):
+        super().__init__(master, *args, **kwargs)
+        
+        self.mainApp = mainApp
+        self.isActive = False
+        self.callback = None
+        
+        self.configure(fg_color = Color().transparent)
+        
+        self.build_ui()
+    
+    def build_ui(self):
+        self.grid_rowconfigure(0, weight = 0)
+        self.grid_rowconfigure(1, weight = 1)
+        self.grid_columnconfigure(0, weight = 1)
+        
+        self.frame_module_title = CTkFrame(self, fg_color = Color().white,
+                                           corner_radius = 0)
+        self.frame_module_title.grid(row = 0, column = 0, sticky = EW)
+        self.frame_module_title.grid_columnconfigure(0, weight = 1)
+        self.frame_module_title.grid_rowconfigure(0, weight = 1)
+        
+        self.label_module_title = CTkLabel(self.frame_module_title, text = "Invert",
+                                           height = 15,
+                                           text_color = Color().black,
+                                           font = Font().module_label)
+        self.label_module_title.grid(row = 0, column = 0)
+        
+        self.frame_border = CTkFrame(self, fg_color = Color().transparent,
+                                      corner_radius = 0, 
+                                      border_width = 1, 
+                                      border_color = Color().white)
+        self.frame_border.grid(row = 1, column = 0, ipadx = 10, ipady = 10, sticky = NSEW)
+        self.frame_border.grid_rowconfigure(0, weight = 0)
+        self.frame_border.grid_columnconfigure(0, weight = 1)
+        
+        self.frame_checkbox = CTkFrame(self.frame_border, fg_color = Color().transparent)
+        self.frame_checkbox.grid(row = 0, column = 0, padx = (10,0), pady = (10,0), sticky = W)
+        self.frame_checkbox.grid_columnconfigure((0,2), weight = 0)
+        self.frame_checkbox.grid_columnconfigure((1), weight = 0, minsize = 5)
+        self.frame_checkbox.grid_rowconfigure(0, weight = 1)
+        
+        self.checkbox_invert = CTkCheckBox(self.frame_checkbox, text = "",
+                                           width = 15, height = 15,
+                                           command = self.checkbox_invert_callback)
+        self.checkbox_invert.grid(row = 0, column = 0)
+        
+        self.label_invert_title = CTkLabel(self.frame_checkbox, text = "Invert",
+                                      height = 15)
+        self.label_invert_title.grid(row = 0, column = 2, sticky = W)
+    
+    def checkbox_invert_callback(self):
+        if self.checkbox_invert.get():
+            self.isActive = True
+        else:
+            self.isActive = False
+        
+        if self.callback:
+            self.callback()
+    
+    def set_callback(self, callback):
+        self.callback = callback
+        
+    def reset(self):
+        self.isActive = False
+        
+        if self.callback:
+            self.callback()
 
 class Module_Grayscale(CTkFrame):
     def __init__(self, master, mainApp, *args, **kwargs):
