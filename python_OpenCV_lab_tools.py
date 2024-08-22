@@ -6,6 +6,7 @@ import threading
 import colorsys
 import time
 from datetime import datetime
+import math
 import easyocr
 
 class ThreadCamera(threading.Thread):
@@ -20,6 +21,8 @@ class ThreadCamera(threading.Thread):
         self.cameraNumber = 0
         self.width = 2592
         self.height = 1944
+        self.ratio = (4, 3)
+        self.scaledown = 40/100 # percentage
         self.videoCapture = None
         
         self.fps = 0
@@ -122,14 +125,14 @@ class ThreadCamera(threading.Thread):
                 
                 image = self.imageProcessing(image)
             
-                self.showImage = cv2.resize(image,(0,0),fx = 0.4, fy = 0.4)
+                self.showImage = cv2.resize(image,(0,0),fx = self.scaledown, fy = self.scaledown)
                 self.image = image
                 
             except Exception as error:
                 try:
                     image = self.showErrorImage()
                     
-                    self.showImage = cv2.resize(image,(0,0),fx = 0.4, fy = 0.4)
+                    self.showImage = cv2.resize(image,(0,0),fx = self.scaledown, fy = self.scaledown)
                     self.image = image
                 except:
                     pass
@@ -223,8 +226,21 @@ class ThreadCamera(threading.Thread):
     
     def cameraSetup(self, cameraNumber : int):
         self.videoCapture = cv2.VideoCapture(cameraNumber)
+        
+        greatest_common_divisor = math.gcd(self.width, self.height)
+        w_ratio = self.width // greatest_common_divisor
+        h_ratio = self.height // greatest_common_divisor
+        self.ratio = (w_ratio, h_ratio)
+        
         self.videoCapture.set(cv2.CAP_PROP_FRAME_WIDTH, self.width)
         self.videoCapture.set(cv2.CAP_PROP_FRAME_HEIGHT, self.height)
+        
+        # self.videoCapture.set(cv2.CAP_PROP_AUTO_EXPOSURE, 0)
+        # self.videoCapture.set(cv2.CAP_PROP_BRIGHTNESS, 10000.0)
+        # self.videoCapture.set(cv2.CAP_PROP_EXPOSURE, -1.0)
+        # self.videoCapture.set(cv2.CAP_PROP_CONTRAST, 140)
+        # self.videoCapture.set(cv2.CAP_PROP_SATURATION, 255)
+        # self.videoCapture.set(cv2.CAP_PROP_SHARPNESS, 90)
     
     def changeCameraNumber(self, cameraNumber):
         if cameraNumber != self.cameraNumber:
@@ -396,7 +412,10 @@ class ThreadCamera(threading.Thread):
                 return
             
         cv2.namedWindow('Select_Transform', cv2.WINDOW_NORMAL)
-        cv2.resizeWindow('Select_Transform', 1200,900)
+        if self.ratio == (4, 3):
+            cv2.resizeWindow('Select_Transform', 1200,900)
+        else:
+            cv2.resizeWindow('Select_Transform', 1600,900)
         cv2.setMouseCallback('Select_Transform', selectTransformPoint)
         
         while self.isPerspectivePointSet == False:
@@ -470,7 +489,10 @@ class ThreadCamera(threading.Thread):
                 return
             
         cv2.namedWindow('OCR_Inspection', cv2.WINDOW_NORMAL)
-        cv2.resizeWindow('OCR_Inspection', 1200,900)
+        if self.ratio == (4, 3):
+            cv2.resizeWindow('OCR_Inspection', 1200,900)
+        else:
+            cv2.resizeWindow('OCR_Inspection', 1600,900)
         cv2.setMouseCallback('OCR_Inspection', selectROIOCR)
         
         while isSelected == False:
@@ -651,8 +673,8 @@ class MainApp(CTk):
         self.comboBox_camera_number.grid(row = 0, column = 1)
         
         self.displayCamera = CTkEntry(self.frame_camera, fg_color = Color().black,
-                                      width = int(2592/2.5),
-                                      height = int(1944/2.5),
+                                      width = int(self.camera.width * self.camera.scaledown),
+                                      height = int(self.camera.height * self.camera.scaledown),
                                       corner_radius = 0,
                                       justify = CENTER)
         self.displayCamera.insert(0, "Camera Display")
@@ -919,7 +941,8 @@ class MainApp(CTk):
     def cameraUpdate(self):
         try:
             self.processImage = Image.fromarray(self.camera.showImage)
-            self.showCameraImage_ui.configure(image = CTkImage(self.processImage, size = (int(self.camera.width/2.5), self.camera.height/2.5)))
+            self.showCameraImage_ui.configure(image = CTkImage(self.processImage, 
+                                                               size = (int(self.camera.width * self.camera.scaledown), self.camera.height * self.camera.scaledown)))
             self.label_program_fps.configure(text = f"FPS: {self.camera.fps}")
             
             # Update if cancel perspective select point
@@ -952,8 +975,13 @@ class MainApp(CTk):
     
     def toplevel_camera_selection_callback(self):
         self.camera.cameraSetup(self.toplevel_camera_selection.cameraNumber)
+        self.camera.width = self.toplevel_camera_selection.cameraResolution[0]
+        self.camera.height = self.toplevel_camera_selection.cameraResolution[1]
         self.camera.isSelectCamera = True
         self.camera.start()
+        
+        self.displayCamera.configure(width = self.camera.width * self.camera.scaledown,
+                                     height = self.camera.height * self.camera.scaledown)
     
     def program_keyboard_command(self, event):
         # Show/Hide Camera FPS
@@ -2175,8 +2203,12 @@ class Toplevel_Camera_Selection(CTkToplevel):
         
         # Variable
         self.cameraNumber = 0
+        self.cameraResolution = (2592, 1944)
+        
         self.isCameraSelect = False
         self.callback = callback
+        
+        self.camera_resolution_list = ["1920x1080", "2592x1944"]
         
         # Setting
         self.attributes("-topmost", False)  # Always on top
@@ -2218,12 +2250,21 @@ class Toplevel_Camera_Selection(CTkToplevel):
         self.combobox_camera_number.set("0")
         self.combobox_camera_number.grid(row = 1, column = 0, pady = (0, 20), sticky = EW)
         
+        self.label_camera_resolution_title = CTkLabel(self.frame_camera_selection, text = "Camera Resulution",
+                                                  text_color = Color().white)
+        self.label_camera_resolution_title.grid(row = 2, column = 0, sticky = W)
+        
+        self.combobox_camera_resolution = CTkComboBox(self.frame_camera_selection, values = self.camera_resolution_list,
+                                                  command = self.combobox_camera_resolution_callback)
+        self.combobox_camera_resolution.set("2592x1944")
+        self.combobox_camera_resolution.grid(row = 3, column = 0, pady = (0, 20), sticky = EW)
+        
         self.btn_ok = CTkButton(self.frame_camera_selection, text = "OK",
                                 width = 100, height = 50,
                                 corner_radius = 0,
                                 border_width = 0,
                                 command = self.btn_ok_callback)
-        self.btn_ok.grid(row = 2, column = 0)
+        self.btn_ok.grid(row = 4, column = 0)
     
     def bringToTop(self):
         self.after(100, lambda: self.attributes("-topmost", True))
@@ -2231,6 +2272,10 @@ class Toplevel_Camera_Selection(CTkToplevel):
     
     def combobox_camera_number_callback(self, choice):
         self.cameraNumber = choice
+    
+    def combobox_camera_resolution_callback(self, choice):
+        resulution = choice.split("x")
+        self.cameraResolution = (int(resulution[0]), int(resulution[1]))
     
     def btn_ok_callback(self):
         if self.cameraNumber == None:
