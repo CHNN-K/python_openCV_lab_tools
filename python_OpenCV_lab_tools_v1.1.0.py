@@ -19,7 +19,7 @@ class ThreadCamera(threading.Thread):
         
         self.isSelectCamera = False
         self.cameraList = []
-        self.cameraNumber = 0
+        self.cameraNumber = 1
         self.width = 2592
         self.height = 1944
         self.ratio = (4, 3)
@@ -98,8 +98,7 @@ class ThreadCamera(threading.Thread):
         while self.isSelectCamera == False:
             time.sleep(0.1)
             pass
-        
-        self.cameraSetup(self.cameraNumber)
+        # self.cameraSetup(self.cameraNumber)
         
         while not self._stop_event.is_set():
             try:
@@ -623,9 +622,6 @@ class Font:
 class MainApp(CTk):
     def __init__(self):
         super().__init__()
-
-        # Variable
-        self.comboBox_var_blur = ["Gaussian Blurring", "Averaging", "Median Blurring", "Bilateral Filtering "]
         
         self.animation_silder_label_isplay = False
         self.animation_slider_label_timer = 0
@@ -1037,11 +1033,6 @@ class MainApp(CTk):
     
     def btn_toggle_perspectiveTransform_callback(self):
         self.camera.isPerspectiveTransform ^= 1
-        
-        # if self.checkbox_isPerspectiveTransform.get():
-        #     self.camera.isPerspectiveTransform = True
-        # else:
-        #     self.camera.isPerspectiveTransform = False
     
     def btn_resetPerspectiveTransform_callback(self):
         self.camera.isPerspectiveTransform = False
@@ -2290,7 +2281,7 @@ class Toplevel_Camera_Selection(CTkToplevel):
         self.isCameraSelect = False
         self.callback = callback
         
-        self.camera_resolution_list = ["1920x1080", "2592x1944"]
+        self.camera_resolution_list = ["1920x1080", "2592x1944", "1280x1024"]
         
         # Setting
         self.attributes("-topmost", False)  # Always on top
