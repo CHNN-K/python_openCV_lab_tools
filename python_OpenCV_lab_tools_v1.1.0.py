@@ -19,7 +19,7 @@ class ThreadCamera(threading.Thread):
         
         self.isSelectCamera = False
         self.cameraList = []
-        self.cameraNumber = 1
+        self.cameraNumber = 0
         self.width = 2592
         self.height = 1944
         self.ratio = (4, 3)
